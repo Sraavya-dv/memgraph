@@ -16,11 +16,11 @@ from functools import partial
 import interactive_mg_runner
 import pytest
 from common import (
-    connect,
-    execute_and_fetch_all,
-    get_data_path,
-    get_logs_path,
-    show_instances,
+  connect,
+  execute_and_fetch_all,
+  get_data_path,
+  get_logs_path,
+  show_instances,
 )
 from mg_utils import mg_sleep_and_assert
 

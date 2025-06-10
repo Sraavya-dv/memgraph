@@ -8,12 +8,8 @@ SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 RESULTS_DIR = os.path.join(SCRIPT_DIR, "results")
 MEASUREMENTS_PATH = os.path.join(SCRIPT_DIR, ".apollo_measurements")
 
-LDBC_TIME_FACTORS = {
-    "SECONDS": 1.0,
-    "MILLISECONDS": 1000.0,
-    "MICROSECONDS": 1000000.0,
-    "NANOSECONDS": 1000000000.0
-}
+LDBC_TIME_FACTORS = {"SECONDS": 1.0, "MILLISECONDS": 1000.0, "MICROSECONDS": 1000000.0, "NANOSECONDS": 1000000000.0}
+
 
 def generate_measurements(path):
     ret = ""
@@ -35,11 +31,14 @@ def generate_measurements(path):
             ret += "{}.queries.{}.{} {}\n".format(test_path, name, key, value / scale)
     return ret
 
+
 measurements = ""
 for fname in sorted(os.listdir(RESULTS_DIR)):
     path = os.path.join(RESULTS_DIR, fname)
-    if not os.path.isfile(path): continue
-    if not path.endswith(".json"): continue
+    if not os.path.isfile(path):
+        continue
+    if not path.endswith(".json"):
+        continue
     measurements += generate_measurements(path)
 
 with open(MEASUREMENTS_PATH, "w") as f:

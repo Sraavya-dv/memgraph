@@ -13,8 +13,8 @@ import os
 import shutil
 import sys
 import tempfile
-import time
 import threading
+import time
 from typing import Any, Dict
 
 import interactive_mg_runner
@@ -100,6 +100,7 @@ def number_of_snapshots(dir):
         return len(files)
     except:
         return 0
+
 
 # Need to constantly make changes to the database to trigger snapshots
 class StoppableThread(threading.Thread):

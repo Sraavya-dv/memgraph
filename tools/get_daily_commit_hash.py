@@ -1,8 +1,9 @@
-from aggregate_build_tests import list_daily_release_packages
-from typing import List
-import re
-import os
 import argparse
+import os
+import re
+from typing import List
+
+from aggregate_build_tests import list_daily_release_packages
 
 
 def extract_commit_hash(filename):
@@ -40,9 +41,7 @@ def get_daily_commit_hash(date: int) -> List[str]:
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Extract list of commit hashes form daily build"
-    )
+    parser = argparse.ArgumentParser(description="Extract list of commit hashes form daily build")
     parser.add_argument("date", type=str, help="Date as a string (e.g., '20250409').")
 
     args = parser.parse_args()

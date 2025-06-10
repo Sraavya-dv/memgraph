@@ -16,20 +16,20 @@ from functools import partial
 import interactive_mg_runner
 import pytest
 from common import (
-    connect,
-    execute_and_fetch_all,
-    find_instance_and_assert_instances,
-    get_data_path,
-    get_logs_path,
-    get_vertex_count,
-    show_instances,
-    show_replicas,
-    update_tuple_value,
+  connect,
+  execute_and_fetch_all,
+  find_instance_and_assert_instances,
+  get_data_path,
+  get_logs_path,
+  get_vertex_count,
+  show_instances,
+  show_replicas,
+  update_tuple_value,
 )
 from mg_utils import (
-    mg_sleep_and_assert,
-    mg_sleep_and_assert_multiple,
-    mg_sleep_and_assert_until_role_change,
+  mg_sleep_and_assert,
+  mg_sleep_and_assert_multiple,
+  mg_sleep_and_assert_until_role_change,
 )
 
 interactive_mg_runner.SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))

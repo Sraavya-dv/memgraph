@@ -25,6 +25,7 @@ import requests
 # PULSAR_HOSTNAME=os.getenv("PULSAR_HOSTNAME", "localhost")
 # PULSAR_PORT="6652" if PULSAR_HOSTNAME == "localhost" else "8080"
 
+
 @pytest.fixture(autouse=True)
 def connection():
     connection = connect()

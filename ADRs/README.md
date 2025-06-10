@@ -64,4 +64,3 @@ whether or not an ADR is needed.
 1. **Problem** - a concise paragraph explaining the context
 1. **Criteria** - a list of the two or three metrics by which the solution was evaluated, and their relative weights (importance)
 1. **Decision** - what was chosen as the way forward, and what the consequences are of the decision
-

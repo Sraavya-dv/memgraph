@@ -10,11 +10,10 @@
 # licenses/APL.txt.
 
 import sys
+
 import pytest
-
-from mgclient import DatabaseError
-
 from common import connect, execute_and_fetch_all, reset_update_permissions
+from mgclient import DatabaseError
 
 update_property_query = "MATCH (n:update_label) SET n.prop = 2 RETURN n.prop;"
 update_properties_query = "MATCH (n:update_label) SET n = {prop: 2, prop2: 3} RETURN n.prop;"

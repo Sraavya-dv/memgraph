@@ -145,7 +145,6 @@ class OutOfRangeError(Exception):
 
 
 class LogicErrorError(Exception):
-
     pass
 
 

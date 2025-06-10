@@ -10,8 +10,7 @@
 # licenses/APL.txt.
 
 import pytest
-
-from common import execute_and_fetch_all, connect
+from common import connect, execute_and_fetch_all
 
 
 @pytest.fixture(autouse=True)

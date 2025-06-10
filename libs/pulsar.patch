@@ -5,7 +5,7 @@ index 5cbbea6..17f82dc 100644
 @@ -112,19 +112,11 @@ find_package(OpenSSL REQUIRED)
  set(RECORD_OPENSSL_SSL_LIBRARY ${OPENSSL_SSL_LIBRARY})
  set(RECORD_OPENSSL_CRYPTO_LIBRARY ${OPENSSL_CRYPTO_LIBRARY})
- 
+
 -unset(OPENSSL_FOUND CACHE)
 -unset(OPENSSL_INCLUDE_DIR CACHE)
 -unset(OPENSSL_CRYPTO_LIBRARY CACHE)
@@ -26,7 +26,7 @@ index 5cbbea6..17f82dc 100644
      message(STATUS "Protobuf_LITE_LIBRARIES: ${Protobuf_LITE_LIBRARIES}")
 @@ -157,7 +149,6 @@ if (LINK_STATIC)
      endif()
- 
+
      SET(Boost_USE_STATIC_LIBS   ON)
 -    SET(OPENSSL_USE_STATIC_LIBS TRUE)
  else()
@@ -37,23 +37,23 @@ index 508e4f4..87c5f2a 100644
 --- a/pulsar-client-cpp/lib/CompressionCodecLZ4.cc
 +++ b/pulsar-client-cpp/lib/CompressionCodecLZ4.cc
 @@ -25,11 +25,11 @@ namespace pulsar {
- 
+
  SharedBuffer CompressionCodecLZ4::encode(const SharedBuffer& raw) {
      // Get the max size of the compressed data and allocate a buffer to hold it
 -    int maxCompressedSize = LZ4_compressBound(raw.readableBytes());
 +    int maxCompressedSize = PULSAR_LZ4_compressBound(raw.readableBytes());
      SharedBuffer compressed = SharedBuffer::allocate(maxCompressedSize);
- 
+
      int compressedSize =
 -        LZ4_compress_default(raw.data(), compressed.mutableData(), raw.readableBytes(), maxCompressedSize);
 +        PULSAR_LZ4_compress_default(raw.data(), compressed.mutableData(), raw.readableBytes(), maxCompressedSize);
      assert(compressedSize > 0);
      compressed.bytesWritten(compressedSize);
- 
+
 @@ -40,7 +40,7 @@ bool CompressionCodecLZ4::decode(const SharedBuffer& encoded, uint32_t uncompres
                                   SharedBuffer& decoded) {
      SharedBuffer decompressed = SharedBuffer::allocate(uncompressedSize);
- 
+
 -    int result = LZ4_decompress_fast(encoded.data(), decompressed.mutableData(), uncompressedSize);
 +    int result = PULSAR_LZ4_decompress_fast(encoded.data(), decompressed.mutableData(), uncompressedSize);
      if (result > 0) {
@@ -64,26 +64,26 @@ index 08cf6b5..07d3e01 100644
 --- a/pulsar-client-cpp/lib/lz4/lz4.c
 +++ b/pulsar-client-cpp/lib/lz4/lz4.c
 @@ -45,7 +45,7 @@
- 
+
  /*
   * ACCELERATION_DEFAULT :
 - * Select "acceleration" for LZ4_compress_fast() when parameter value <= 0
 + * Select "acceleration" for PULSAR_LZ4_compress_fast() when parameter value <= 0
   */
  #define ACCELERATION_DEFAULT 1
- 
+
 @@ -135,25 +135,25 @@
- 
+
  static unsigned LZ4_64bits(void) { return sizeof(void*)==8; }
- 
+
 -static unsigned LZ4_isLittleEndian(void)
 +static unsigned PULSAR_LZ4_isLittleEndian(void)
  {
      const union { U32 i; BYTE c[4]; } one = { 1 };   /* don't use static : performance detrimental  */
      return one.c[0];
  }
- 
- 
+
+
 -static U16 LZ4_read16(const void* memPtr)
 +static U16 PULSAR_LZ4_read16(const void* memPtr)
  {
@@ -91,7 +91,7 @@ index 08cf6b5..07d3e01 100644
      memcpy(&val16, memPtr, 2);
      return val16;
  }
- 
+
 -static U16 LZ4_readLE16(const void* memPtr)
 +static U16 PULSAR_LZ4_readLE16(const void* memPtr)
  {
@@ -106,7 +106,7 @@ index 08cf6b5..07d3e01 100644
 @@ -162,9 +162,9 @@ static U16 LZ4_readLE16(const void* memPtr)
      }
  }
- 
+
 -static void LZ4_writeLE16(void* memPtr, U16 value)
 +static void PULSAR_LZ4_writeLE16(void* memPtr, U16 value)
  {
@@ -118,7 +118,7 @@ index 08cf6b5..07d3e01 100644
 @@ -176,40 +176,40 @@ static void LZ4_writeLE16(void* memPtr, U16 value)
      }
  }
- 
+
 -static U32 LZ4_read32(const void* memPtr)
 +static U32 PULSAR_LZ4_read32(const void* memPtr)
  {
@@ -126,7 +126,7 @@ index 08cf6b5..07d3e01 100644
      memcpy(&val32, memPtr, 4);
      return val32;
  }
- 
+
 -static U64 LZ4_read64(const void* memPtr)
 +static U64 PULSAR_LZ4_read64(const void* memPtr)
  {
@@ -134,7 +134,7 @@ index 08cf6b5..07d3e01 100644
      memcpy(&val64, memPtr, 8);
      return val64;
  }
- 
+
 -static size_t LZ4_read_ARCH(const void* p)
 +static size_t PULSAR_LZ4_read_ARCH(const void* p)
  {
@@ -145,14 +145,14 @@ index 08cf6b5..07d3e01 100644
 -        return (size_t)LZ4_read32(p);
 +        return (size_t)PULSAR_LZ4_read32(p);
  }
- 
- 
+
+
 -static void LZ4_copy4(void* dstPtr, const void* srcPtr) { memcpy(dstPtr, srcPtr, 4); }
 +static void PULSAR_LZ4_copy4(void* dstPtr, const void* srcPtr) { memcpy(dstPtr, srcPtr, 4); }
- 
+
 -static void LZ4_copy8(void* dstPtr, const void* srcPtr) { memcpy(dstPtr, srcPtr, 8); }
 +static void PULSAR_LZ4_copy8(void* dstPtr, const void* srcPtr) { memcpy(dstPtr, srcPtr, 8); }
- 
+
  /* customized version of memcpy, which may overwrite up to 7 bytes beyond dstEnd */
 -static void LZ4_wildCopy(void* dstPtr, const void* srcPtr, void* dstEnd)
 +static void PULSAR_LZ4_wildCopy(void* dstPtr, const void* srcPtr, void* dstEnd)
@@ -163,15 +163,15 @@ index 08cf6b5..07d3e01 100644
 -    do { LZ4_copy8(d,s); d+=8; s+=8; } while (d<e);
 +    do { PULSAR_LZ4_copy8(d,s); d+=8; s+=8; } while (d<e);
  }
- 
- 
+
+
 @@ -221,7 +221,7 @@ static void LZ4_wildCopy(void* dstPtr, const void* srcPtr, void* dstEnd)
  #define COPYLENGTH 8
  #define LASTLITERALS 5
  #define MFLIMIT (COPYLENGTH+MINMATCH)
 -static const int LZ4_minLength = (MFLIMIT+1);
 +static const int PULSAR_LZ4_minLength = (MFLIMIT+1);
- 
+
  #define KB *(1 <<10)
  #define MB *(1 <<20)
 @@ -239,15 +239,15 @@ static const int LZ4_minLength = (MFLIMIT+1);
@@ -180,8 +180,8 @@ index 08cf6b5..07d3e01 100644
  **************************************/
 -#define LZ4_STATIC_ASSERT(c)    { enum { LZ4_static_assert = 1/(int)(!!(c)) }; }   /* use only *after* variable declarations */
 +#define LZ4_STATIC_ASSERT(c)    { enum { PULSAR_LZ4_static_assert = 1/(int)(!!(c)) }; }   /* use only *after* variable declarations */
- 
- 
+
+
  /**************************************
  *  Common functions
  **************************************/
@@ -196,12 +196,12 @@ index 08cf6b5..07d3e01 100644
 @@ -312,20 +312,20 @@ static unsigned LZ4_NbCommonBytes (register size_t val)
      }
  }
- 
+
 -static unsigned LZ4_count(const BYTE* pIn, const BYTE* pMatch, const BYTE* pInLimit)
 +static unsigned PULSAR_LZ4_count(const BYTE* pIn, const BYTE* pMatch, const BYTE* pInLimit)
  {
      const BYTE* const pStart = pIn;
- 
+
      while (likely(pIn<pInLimit-(STEPSIZE-1)))
      {
 -        size_t diff = LZ4_read_ARCH(pMatch) ^ LZ4_read_ARCH(pIn);
@@ -211,7 +211,7 @@ index 08cf6b5..07d3e01 100644
 +        pIn += PULSAR_LZ4_NbCommonBytes(diff);
          return (unsigned)(pIn - pStart);
      }
- 
+
 -    if (LZ4_64bits()) if ((pIn<(pInLimit-3)) && (LZ4_read32(pMatch) == LZ4_read32(pIn))) { pIn+=4; pMatch+=4; }
 -    if ((pIn<(pInLimit-1)) && (LZ4_read16(pMatch) == LZ4_read16(pIn))) { pIn+=2; pMatch+=2; }
 +    if (LZ4_64bits()) if ((pIn<(pInLimit-3)) && (PULSAR_LZ4_read32(pMatch) == PULSAR_LZ4_read32(pIn))) { pIn+=4; pMatch+=4; }
@@ -222,13 +222,13 @@ index 08cf6b5..07d3e01 100644
 @@ -339,8 +339,8 @@ static unsigned LZ4_count(const BYTE* pIn, const BYTE* pMatch, const BYTE* pInLi
  #define HASHTABLESIZE (1 << LZ4_MEMORY_USAGE)
  #define HASH_SIZE_U32 (1 << LZ4_HASHLOG)       /* required as macro for static allocation */
- 
+
 -static const int LZ4_64Klimit = ((64 KB) + (MFLIMIT-1));
 -static const U32 LZ4_skipTrigger = 6;  /* Increase this value ==> compression run slower on incompressible data */
 +static const int PULSAR_LZ4_64Klimit = ((64 KB) + (MFLIMIT-1));
 +static const U32 PULSAR_LZ4_skipTrigger = 6;  /* Increase this value ==> compression run slower on incompressible data */
- 
- 
+
+
  /**************************************
 @@ -353,7 +353,7 @@ typedef struct {
      const BYTE* dictionary;
@@ -236,7 +236,7 @@ index 08cf6b5..07d3e01 100644
      U32 dictSize;
 -} LZ4_stream_t_internal;
 +} PULSAR_LZ4_stream_t_internal;
- 
+
  typedef enum { notLimited = 0, limitedOutput = 1 } limitedOutput_directive;
  typedef enum { byPtr, byU32, byU16 } tableType_t;
 @@ -368,9 +368,9 @@ typedef enum { full = 0, partial = 1 } earlyEnd_directive;
@@ -249,13 +249,13 @@ index 08cf6b5..07d3e01 100644
 +int PULSAR_LZ4_versionNumber (void) { return LZ4_VERSION_NUMBER; }
 +int PULSAR_LZ4_compressBound(int isize)  { return LZ4_COMPRESSBOUND(isize); }
 +int PULSAR_LZ4_sizeofState() { return LZ4_STREAMSIZE; }
- 
- 
- 
+
+
+
 @@ -378,7 +378,7 @@ int LZ4_sizeofState() { return LZ4_STREAMSIZE; }
  *  Compression functions
  ********************************/
- 
+
 -static U32 LZ4_hashSequence(U32 sequence, tableType_t const tableType)
 +static U32 PULSAR_LZ4_hashSequence(U32 sequence, tableType_t const tableType)
  {
@@ -263,7 +263,7 @@ index 08cf6b5..07d3e01 100644
          return (((sequence) * 2654435761U) >> ((MINMATCH*8)-(LZ4_HASHLOG+1)));
 @@ -387,23 +387,23 @@ static U32 LZ4_hashSequence(U32 sequence, tableType_t const tableType)
  }
- 
+
  static const U64 prime5bytes = 889523592379ULL;
 -static U32 LZ4_hashSequence64(size_t sequence, tableType_t const tableType)
 +static U32 PULSAR_LZ4_hashSequence64(size_t sequence, tableType_t const tableType)
@@ -272,7 +272,7 @@ index 08cf6b5..07d3e01 100644
      const U32 hashMask = (1<<hashLog) - 1;
      return ((sequence * prime5bytes) >> (40 - hashLog)) & hashMask;
  }
- 
+
 -static U32 LZ4_hashSequenceT(size_t sequence, tableType_t const tableType)
 +static U32 PULSAR_LZ4_hashSequenceT(size_t sequence, tableType_t const tableType)
  {
@@ -282,10 +282,10 @@ index 08cf6b5..07d3e01 100644
 +        return PULSAR_LZ4_hashSequence64(sequence, tableType);
 +    return PULSAR_LZ4_hashSequence((U32)sequence, tableType);
  }
- 
+
 -static U32 LZ4_hashPosition(const void* p, tableType_t tableType) { return LZ4_hashSequenceT(LZ4_read_ARCH(p), tableType); }
 +static U32 PULSAR_LZ4_hashPosition(const void* p, tableType_t tableType) { return PULSAR_LZ4_hashSequenceT(PULSAR_LZ4_read_ARCH(p), tableType); }
- 
+
 -static void LZ4_putPositionOnHash(const BYTE* p, U32 h, void* tableBase, tableType_t const tableType, const BYTE* srcBase)
 +static void PULSAR_LZ4_putPositionOnHash(const BYTE* p, U32 h, void* tableBase, tableType_t const tableType, const BYTE* srcBase)
  {
@@ -294,7 +294,7 @@ index 08cf6b5..07d3e01 100644
 @@ -413,26 +413,26 @@ static void LZ4_putPositionOnHash(const BYTE* p, U32 h, void* tableBase, tableTy
      }
  }
- 
+
 -static void LZ4_putPosition(const BYTE* p, void* tableBase, tableType_t tableType, const BYTE* srcBase)
 +static void PULSAR_LZ4_putPosition(const BYTE* p, void* tableBase, tableType_t tableType, const BYTE* srcBase)
  {
@@ -303,7 +303,7 @@ index 08cf6b5..07d3e01 100644
 +    U32 h = PULSAR_LZ4_hashPosition(p, tableType);
 +    PULSAR_LZ4_putPositionOnHash(p, h, tableBase, tableType, srcBase);
  }
- 
+
 -static const BYTE* LZ4_getPositionOnHash(U32 h, void* tableBase, tableType_t tableType, const BYTE* srcBase)
 +static const BYTE* PULSAR_LZ4_getPositionOnHash(U32 h, void* tableBase, tableType_t tableType, const BYTE* srcBase)
  {
@@ -311,7 +311,7 @@ index 08cf6b5..07d3e01 100644
      if (tableType == byU32) { U32* hashTable = (U32*) tableBase; return hashTable[h] + srcBase; }
      { U16* hashTable = (U16*) tableBase; return hashTable[h] + srcBase; }   /* default, to ensure a return */
  }
- 
+
 -static const BYTE* LZ4_getPosition(const BYTE* p, void* tableBase, tableType_t tableType, const BYTE* srcBase)
 +static const BYTE* PULSAR_LZ4_getPosition(const BYTE* p, void* tableBase, tableType_t tableType, const BYTE* srcBase)
  {
@@ -320,7 +320,7 @@ index 08cf6b5..07d3e01 100644
 +    U32 h = PULSAR_LZ4_hashPosition(p, tableType);
 +    return PULSAR_LZ4_getPositionOnHash(h, tableBase, tableType, srcBase);
  }
- 
+
 -FORCE_INLINE int LZ4_compress_generic(
 +FORCE_INLINE int PULSAR_LZ4_compress_generic(
                   void* const ctx,
@@ -332,7 +332,7 @@ index 08cf6b5..07d3e01 100644
  {
 -    LZ4_stream_t_internal* const dictPtr = (LZ4_stream_t_internal*)ctx;
 +    PULSAR_LZ4_stream_t_internal* const dictPtr = (PULSAR_LZ4_stream_t_internal*)ctx;
- 
+
      const BYTE* ip = (const BYTE*) source;
      const BYTE* base;
 @@ -482,12 +482,12 @@ FORCE_INLINE int LZ4_compress_generic(
@@ -343,13 +343,13 @@ index 08cf6b5..07d3e01 100644
 -    if (inputSize<LZ4_minLength) goto _last_literals;                  /* Input too small, no compression (all literals) */
 +    if ((tableType == byU16) && (inputSize>=PULSAR_LZ4_64Klimit)) return 0;   /* Size too large (not within 64K limit) */
 +    if (inputSize<PULSAR_LZ4_minLength) goto _last_literals;                  /* Input too small, no compression (all literals) */
- 
+
      /* First Byte */
 -    LZ4_putPosition(ip, ctx, tableType, base);
 -    ip++; forwardH = LZ4_hashPosition(ip, tableType);
 +    PULSAR_LZ4_putPosition(ip, ctx, tableType, base);
 +    ip++; forwardH = PULSAR_LZ4_hashPosition(ip, tableType);
- 
+
      /* Main Loop */
      for ( ; ; )
 @@ -497,18 +497,18 @@ FORCE_INLINE int LZ4_compress_generic(
@@ -358,7 +358,7 @@ index 08cf6b5..07d3e01 100644
              unsigned step = 1;
 -            unsigned searchMatchNb = acceleration << LZ4_skipTrigger;
 +            unsigned searchMatchNb = acceleration << PULSAR_LZ4_skipTrigger;
- 
+
              /* Find a match */
              do {
                  U32 h = forwardH;
@@ -366,9 +366,9 @@ index 08cf6b5..07d3e01 100644
                  forwardIp += step;
 -                step = (searchMatchNb++ >> LZ4_skipTrigger);
 +                step = (searchMatchNb++ >> PULSAR_LZ4_skipTrigger);
- 
+
                  if (unlikely(forwardIp > mflimit)) goto _last_literals;
- 
+
 -                match = LZ4_getPositionOnHash(h, ctx, tableType, base);
 +                match = PULSAR_LZ4_getPositionOnHash(h, ctx, tableType, base);
                  if (dict==usingExtDict)
@@ -382,28 +382,28 @@ index 08cf6b5..07d3e01 100644
 -                LZ4_putPositionOnHash(ip, h, ctx, tableType, base);
 +                forwardH = PULSAR_LZ4_hashPosition(forwardIp, tableType);
 +                PULSAR_LZ4_putPositionOnHash(ip, h, ctx, tableType, base);
- 
+
              } while ( ((dictIssue==dictSmall) ? (match < lowRefLimit) : 0)
                  || ((tableType==byU16) ? 0 : (match + MAX_DISTANCE < ip))
 -                || (LZ4_read32(match+refDelta) != LZ4_read32(ip)) );
 +                || (PULSAR_LZ4_read32(match+refDelta) != PULSAR_LZ4_read32(ip)) );
          }
- 
+
          /* Catch up */
 @@ -549,13 +549,13 @@ FORCE_INLINE int LZ4_compress_generic(
              else *token = (BYTE)(litLength<<ML_BITS);
- 
+
              /* Copy Literals */
 -            LZ4_wildCopy(op, anchor, op+litLength);
 +            PULSAR_LZ4_wildCopy(op, anchor, op+litLength);
              op+=litLength;
          }
- 
+
  _next_match:
          /* Encode Offset */
 -        LZ4_writeLE16(op, (U16)(ip-match)); op+=2;
 +        PULSAR_LZ4_writeLE16(op, (U16)(ip-match)); op+=2;
- 
+
          /* Encode MatchLength */
          {
 @@ -567,18 +567,18 @@ _next_match:
@@ -427,14 +427,14 @@ index 08cf6b5..07d3e01 100644
 +                matchLength = PULSAR_LZ4_count(ip+MINMATCH, match+MINMATCH, matchlimit);
                  ip += MINMATCH + matchLength;
              }
- 
+
 @@ -601,10 +601,10 @@ _next_match:
          if (ip > mflimit) break;
- 
+
          /* Fill table */
 -        LZ4_putPosition(ip-2, ctx, tableType, base);
 +        PULSAR_LZ4_putPosition(ip-2, ctx, tableType, base);
- 
+
          /* Test next position */
 -        match = LZ4_getPosition(ip, ctx, tableType, base);
 +        match = PULSAR_LZ4_getPosition(ip, ctx, tableType, base);
@@ -452,24 +452,24 @@ index 08cf6b5..07d3e01 100644
 -            && (LZ4_read32(match+refDelta)==LZ4_read32(ip)) )
 +            && (PULSAR_LZ4_read32(match+refDelta)==PULSAR_LZ4_read32(ip)) )
          { token=op++; *token=0; goto _next_match; }
- 
+
          /* Prepare next loop */
 -        forwardH = LZ4_hashPosition(++ip, tableType);
 +        forwardH = PULSAR_LZ4_hashPosition(++ip, tableType);
      }
- 
+
  _last_literals:
 @@ -654,38 +654,38 @@ _last_literals:
  }
- 
- 
+
+
 -int LZ4_compress_fast_extState(void* state, const char* source, char* dest, int inputSize, int maxOutputSize, int acceleration)
 +int PULSAR_LZ4_compress_fast_extState(void* state, const char* source, char* dest, int inputSize, int maxOutputSize, int acceleration)
  {
 -    LZ4_resetStream((LZ4_stream_t*)state);
 +    PULSAR_LZ4_resetStream((PULSAR_LZ4_stream_t*)state);
      if (acceleration < 1) acceleration = ACCELERATION_DEFAULT;
- 
+
 -    if (maxOutputSize >= LZ4_compressBound(inputSize))
 +    if (maxOutputSize >= PULSAR_LZ4_compressBound(inputSize))
      {
@@ -492,8 +492,8 @@ index 08cf6b5..07d3e01 100644
 +            return PULSAR_LZ4_compress_generic(state, source, dest, inputSize, maxOutputSize, limitedOutput, LZ4_64bits() ? byU32 : byPtr, noDict, noDictIssue, acceleration);
      }
  }
- 
- 
+
+
 -int LZ4_compress_fast(const char* source, char* dest, int inputSize, int maxOutputSize, int acceleration)
 +int PULSAR_LZ4_compress_fast(const char* source, char* dest, int inputSize, int maxOutputSize, int acceleration)
  {
@@ -505,24 +505,24 @@ index 08cf6b5..07d3e01 100644
 +    PULSAR_LZ4_stream_t ctx;
      void* ctxPtr = &ctx;
  #endif
- 
+
 -    int result = LZ4_compress_fast_extState(ctxPtr, source, dest, inputSize, maxOutputSize, acceleration);
 +    int result = PULSAR_LZ4_compress_fast_extState(ctxPtr, source, dest, inputSize, maxOutputSize, acceleration);
- 
+
  #if (HEAPMODE)
      FREEMEM(ctxPtr);
 @@ -694,24 +694,24 @@ int LZ4_compress_fast(const char* source, char* dest, int inputSize, int maxOutp
  }
- 
- 
+
+
 -int LZ4_compress_default(const char* source, char* dest, int inputSize, int maxOutputSize)
 +int PULSAR_LZ4_compress_default(const char* source, char* dest, int inputSize, int maxOutputSize)
  {
 -    return LZ4_compress_fast(source, dest, inputSize, maxOutputSize, 1);
 +    return PULSAR_LZ4_compress_fast(source, dest, inputSize, maxOutputSize, 1);
  }
- 
- 
+
+
  /* hidden debug function */
  /* strangely enough, gcc generates faster code when this function is uncommented, even if unused */
 -int LZ4_compress_fast_force(const char* source, char* dest, int inputSize, int maxOutputSize, int acceleration)
@@ -530,10 +530,10 @@ index 08cf6b5..07d3e01 100644
  {
 -    LZ4_stream_t ctx;
 +    PULSAR_LZ4_stream_t ctx;
- 
+
 -    LZ4_resetStream(&ctx);
 +    PULSAR_LZ4_resetStream(&ctx);
- 
+
 -    if (inputSize < LZ4_64Klimit)
 -        return LZ4_compress_generic(&ctx, source, dest, inputSize, maxOutputSize, limitedOutput, byU16,                        noDict, noDictIssue, acceleration);
 +    if (inputSize < PULSAR_LZ4_64Klimit)
@@ -542,12 +542,12 @@ index 08cf6b5..07d3e01 100644
 -        return LZ4_compress_generic(&ctx, source, dest, inputSize, maxOutputSize, limitedOutput, LZ4_64bits() ? byU32 : byPtr, noDict, noDictIssue, acceleration);
 +        return PULSAR_LZ4_compress_generic(&ctx, source, dest, inputSize, maxOutputSize, limitedOutput, LZ4_64bits() ? byU32 : byPtr, noDict, noDictIssue, acceleration);
  }
- 
- 
+
+
 @@ -719,7 +719,7 @@ int LZ4_compress_fast_force(const char* source, char* dest, int inputSize, int m
  *  destSize variant
  ********************************/
- 
+
 -static int LZ4_compress_destSize_generic(
 +static int PULSAR_LZ4_compress_destSize_generic(
                         void* const ctx,
@@ -561,14 +561,14 @@ index 08cf6b5..07d3e01 100644
 -    if (*srcSizePtr<LZ4_minLength) goto _last_literals;                  /* Input too small, no compression (all literals) */
 +    if ((tableType == byU16) && (*srcSizePtr>=PULSAR_LZ4_64Klimit)) return 0;   /* Size too large (not within 64K limit) */
 +    if (*srcSizePtr<PULSAR_LZ4_minLength) goto _last_literals;                  /* Input too small, no compression (all literals) */
- 
+
      /* First Byte */
      *srcSizePtr = 0;
 -    LZ4_putPosition(ip, ctx, tableType, base);
 -    ip++; forwardH = LZ4_hashPosition(ip, tableType);
 +    PULSAR_LZ4_putPosition(ip, ctx, tableType, base);
 +    ip++; forwardH = PULSAR_LZ4_hashPosition(ip, tableType);
- 
+
      /* Main Loop */
      for ( ; ; )
 @@ -763,24 +763,24 @@ static int LZ4_compress_destSize_generic(
@@ -577,7 +577,7 @@ index 08cf6b5..07d3e01 100644
              unsigned step = 1;
 -            unsigned searchMatchNb = 1 << LZ4_skipTrigger;
 +            unsigned searchMatchNb = 1 << PULSAR_LZ4_skipTrigger;
- 
+
              /* Find a match */
              do {
                  U32 h = forwardH;
@@ -585,53 +585,53 @@ index 08cf6b5..07d3e01 100644
                  forwardIp += step;
 -                step = (searchMatchNb++ >> LZ4_skipTrigger);
 +                step = (searchMatchNb++ >> PULSAR_LZ4_skipTrigger);
- 
+
                  if (unlikely(forwardIp > mflimit))
                      goto _last_literals;
- 
+
 -                match = LZ4_getPositionOnHash(h, ctx, tableType, base);
 -                forwardH = LZ4_hashPosition(forwardIp, tableType);
 -                LZ4_putPositionOnHash(ip, h, ctx, tableType, base);
 +                match = PULSAR_LZ4_getPositionOnHash(h, ctx, tableType, base);
 +                forwardH = PULSAR_LZ4_hashPosition(forwardIp, tableType);
 +                PULSAR_LZ4_putPositionOnHash(ip, h, ctx, tableType, base);
- 
+
              } while ( ((tableType==byU16) ? 0 : (match + MAX_DISTANCE < ip))
 -                || (LZ4_read32(match) != LZ4_read32(ip)) );
 +                || (PULSAR_LZ4_read32(match) != PULSAR_LZ4_read32(ip)) );
          }
- 
+
          /* Catch up */
 @@ -806,19 +806,19 @@ static int LZ4_compress_destSize_generic(
              else *token = (BYTE)(litLength<<ML_BITS);
- 
+
              /* Copy Literals */
 -            LZ4_wildCopy(op, anchor, op+litLength);
 +            PULSAR_LZ4_wildCopy(op, anchor, op+litLength);
              op += litLength;
          }
- 
+
  _next_match:
          /* Encode Offset */
 -        LZ4_writeLE16(op, (U16)(ip-match)); op+=2;
 +        PULSAR_LZ4_writeLE16(op, (U16)(ip-match)); op+=2;
- 
+
          /* Encode MatchLength */
          {
              size_t matchLength;
- 
+
 -            matchLength = LZ4_count(ip+MINMATCH, match+MINMATCH, matchlimit);
 +            matchLength = PULSAR_LZ4_count(ip+MINMATCH, match+MINMATCH, matchlimit);
- 
+
              if (op + ((matchLength+240)/255) > oMaxMatch)
              {
 @@ -845,17 +845,17 @@ _next_match:
          if (op > oMaxSeq) break;
- 
+
          /* Fill table */
 -        LZ4_putPosition(ip-2, ctx, tableType, base);
 +        PULSAR_LZ4_putPosition(ip-2, ctx, tableType, base);
- 
+
          /* Test next position */
 -        match = LZ4_getPosition(ip, ctx, tableType, base);
 -        LZ4_putPosition(ip, ctx, tableType, base);
@@ -641,23 +641,23 @@ index 08cf6b5..07d3e01 100644
 -            && (LZ4_read32(match)==LZ4_read32(ip)) )
 +            && (PULSAR_LZ4_read32(match)==PULSAR_LZ4_read32(ip)) )
          { token=op++; *token=0; goto _next_match; }
- 
+
          /* Prepare next loop */
 -        forwardH = LZ4_hashPosition(++ip, tableType);
 +        forwardH = PULSAR_LZ4_hashPosition(++ip, tableType);
      }
- 
+
  _last_literals:
 @@ -891,34 +891,34 @@ _last_literals:
  }
- 
- 
+
+
 -static int LZ4_compress_destSize_extState (void* state, const char* src, char* dst, int* srcSizePtr, int targetDstSize)
 +static int PULSAR_LZ4_compress_destSize_extState (void* state, const char* src, char* dst, int* srcSizePtr, int targetDstSize)
  {
 -    LZ4_resetStream((LZ4_stream_t*)state);
 +    PULSAR_LZ4_resetStream((PULSAR_LZ4_stream_t*)state);
- 
+
 -    if (targetDstSize >= LZ4_compressBound(*srcSizePtr))   /* compression success is guaranteed */
 +    if (targetDstSize >= PULSAR_LZ4_compressBound(*srcSizePtr))   /* compression success is guaranteed */
      {
@@ -675,8 +675,8 @@ index 08cf6b5..07d3e01 100644
 +            return PULSAR_LZ4_compress_destSize_generic(state, src, dst, srcSizePtr, targetDstSize, LZ4_64bits() ? byU32 : byPtr);
      }
  }
- 
- 
+
+
 -int LZ4_compress_destSize(const char* src, char* dst, int* srcSizePtr, int targetDstSize)
 +int PULSAR_LZ4_compress_destSize(const char* src, char* dst, int* srcSizePtr, int targetDstSize)
  {
@@ -688,16 +688,16 @@ index 08cf6b5..07d3e01 100644
 +    PULSAR_LZ4_stream_t ctxBody;
      void* ctx = &ctxBody;
  #endif
- 
+
 -    int result = LZ4_compress_destSize_extState(ctx, src, dst, srcSizePtr, targetDstSize);
 +    int result = PULSAR_LZ4_compress_destSize_extState(ctx, src, dst, srcSizePtr, targetDstSize);
- 
+
  #if (HEAPMODE)
      FREEMEM(ctx);
 @@ -932,36 +932,36 @@ int LZ4_compress_destSize(const char* src, char* dst, int* srcSizePtr, int targe
  *  Streaming functions
  ********************************/
- 
+
 -LZ4_stream_t* LZ4_createStream(void)
 +PULSAR_LZ4_stream_t* PULSAR_LZ4_createStream(void)
  {
@@ -709,14 +709,14 @@ index 08cf6b5..07d3e01 100644
 +    PULSAR_LZ4_resetStream(lz4s);
      return lz4s;
  }
- 
+
 -void LZ4_resetStream (LZ4_stream_t* LZ4_stream)
 +void PULSAR_LZ4_resetStream (PULSAR_LZ4_stream_t* PULSAR_LZ4_stream)
  {
 -    MEM_INIT(LZ4_stream, 0, sizeof(LZ4_stream_t));
 +    MEM_INIT(PULSAR_LZ4_stream, 0, sizeof(PULSAR_LZ4_stream_t));
  }
- 
+
 -int LZ4_freeStream (LZ4_stream_t* LZ4_stream)
 +int PULSAR_LZ4_freeStream (PULSAR_LZ4_stream_t* PULSAR_LZ4_stream)
  {
@@ -724,8 +724,8 @@ index 08cf6b5..07d3e01 100644
 +    FREEMEM(PULSAR_LZ4_stream);
      return (0);
  }
- 
- 
+
+
  #define HASH_UNIT sizeof(size_t)
 -int LZ4_loadDict (LZ4_stream_t* LZ4_dict, const char* dictionary, int dictSize)
 +int PULSAR_LZ4_loadDict (PULSAR_LZ4_stream_t* PULSAR_LZ4_dict, const char* dictionary, int dictSize)
@@ -735,26 +735,26 @@ index 08cf6b5..07d3e01 100644
      const BYTE* p = (const BYTE*)dictionary;
      const BYTE* const dictEnd = p + dictSize;
      const BYTE* base;
- 
+
      if ((dict->initCheck) || (dict->currentOffset > 1 GB))  /* Uninitialized structure, or reuse overflow */
 -        LZ4_resetStream(LZ4_dict);
 +        PULSAR_LZ4_resetStream(PULSAR_LZ4_dict);
- 
+
      if (dictSize < (int)HASH_UNIT)
      {
 @@ -979,7 +979,7 @@ int LZ4_loadDict (LZ4_stream_t* LZ4_dict, const char* dictionary, int dictSize)
- 
+
      while (p <= dictEnd-HASH_UNIT)
      {
 -        LZ4_putPosition(p, dict->hashTable, byU32, base);
 +        PULSAR_LZ4_putPosition(p, dict->hashTable, byU32, base);
          p+=3;
      }
- 
+
 @@ -987,36 +987,36 @@ int LZ4_loadDict (LZ4_stream_t* LZ4_dict, const char* dictionary, int dictSize)
  }
- 
- 
+
+
 -static void LZ4_renormDictT(LZ4_stream_t_internal* LZ4_dict, const BYTE* src)
 +static void PULSAR_LZ4_renormDictT(PULSAR_LZ4_stream_t_internal* PULSAR_LZ4_dict, const BYTE* src)
  {
@@ -784,22 +784,22 @@ index 08cf6b5..07d3e01 100644
 +        PULSAR_LZ4_dict->dictionary = dictEnd - PULSAR_LZ4_dict->dictSize;
      }
  }
- 
- 
+
+
 -int LZ4_compress_fast_continue (LZ4_stream_t* LZ4_stream, const char* source, char* dest, int inputSize, int maxOutputSize, int acceleration)
 +int PULSAR_LZ4_compress_fast_continue (PULSAR_LZ4_stream_t* PULSAR_LZ4_stream, const char* source, char* dest, int inputSize, int maxOutputSize, int acceleration)
  {
 -    LZ4_stream_t_internal* streamPtr = (LZ4_stream_t_internal*)LZ4_stream;
 +    PULSAR_LZ4_stream_t_internal* streamPtr = (PULSAR_LZ4_stream_t_internal*)PULSAR_LZ4_stream;
      const BYTE* const dictEnd = streamPtr->dictionary + streamPtr->dictSize;
- 
+
      const BYTE* smallest = (const BYTE*) source;
      if (streamPtr->initCheck) return 0;   /* Uninitialized structure detected */
      if ((streamPtr->dictSize>0) && (smallest>dictEnd)) smallest = dictEnd;
 -    LZ4_renormDictT(streamPtr, smallest);
 +    PULSAR_LZ4_renormDictT(streamPtr, smallest);
      if (acceleration < 1) acceleration = ACCELERATION_DEFAULT;
- 
+
      /* Check overlapping input/dictionary space */
 @@ -1036,9 +1036,9 @@ int LZ4_compress_fast_continue (LZ4_stream_t* LZ4_stream, const char* source, ch
      {
@@ -826,8 +826,8 @@ index 08cf6b5..07d3e01 100644
          streamPtr->dictSize = (U32)inputSize;
          streamPtr->currentOffset += (U32)inputSize;
 @@ -1060,17 +1060,17 @@ int LZ4_compress_fast_continue (LZ4_stream_t* LZ4_stream, const char* source, ch
- 
- 
+
+
  /* Hidden debug function, to force external dictionary mode */
 -int LZ4_compress_forceExtDict (LZ4_stream_t* LZ4_dict, const char* source, char* dest, int inputSize)
 +int PULSAR_LZ4_compress_forceExtDict (PULSAR_LZ4_stream_t* PULSAR_LZ4_dict, const char* source, char* dest, int inputSize)
@@ -836,28 +836,28 @@ index 08cf6b5..07d3e01 100644
 +    PULSAR_LZ4_stream_t_internal* streamPtr = (PULSAR_LZ4_stream_t_internal*)PULSAR_LZ4_dict;
      int result;
      const BYTE* const dictEnd = streamPtr->dictionary + streamPtr->dictSize;
- 
+
      const BYTE* smallest = dictEnd;
      if (smallest > (const BYTE*) source) smallest = (const BYTE*) source;
 -    LZ4_renormDictT((LZ4_stream_t_internal*)LZ4_dict, smallest);
 +    PULSAR_LZ4_renormDictT((PULSAR_LZ4_stream_t_internal*)PULSAR_LZ4_dict, smallest);
- 
+
 -    result = LZ4_compress_generic(LZ4_dict, source, dest, inputSize, 0, notLimited, byU32, usingExtDict, noDictIssue, 1);
 +    result = PULSAR_LZ4_compress_generic(PULSAR_LZ4_dict, source, dest, inputSize, 0, notLimited, byU32, usingExtDict, noDictIssue, 1);
- 
+
      streamPtr->dictionary = (const BYTE*)source;
      streamPtr->dictSize = (U32)inputSize;
 @@ -1080,9 +1080,9 @@ int LZ4_compress_forceExtDict (LZ4_stream_t* LZ4_dict, const char* source, char*
  }
- 
- 
+
+
 -int LZ4_saveDict (LZ4_stream_t* LZ4_dict, char* safeBuffer, int dictSize)
 +int PULSAR_LZ4_saveDict (PULSAR_LZ4_stream_t* PULSAR_LZ4_dict, char* safeBuffer, int dictSize)
  {
 -    LZ4_stream_t_internal* dict = (LZ4_stream_t_internal*) LZ4_dict;
 +    PULSAR_LZ4_stream_t_internal* dict = (PULSAR_LZ4_stream_t_internal*) PULSAR_LZ4_dict;
      const BYTE* previousDictEnd = dict->dictionary + dict->dictSize;
- 
+
      if ((U32)dictSize > 64 KB) dictSize = 64 KB;   /* useless to define a dictionary > 64 KB */
 @@ -1107,7 +1107,7 @@ int LZ4_saveDict (LZ4_stream_t* LZ4_dict, char* safeBuffer, int dictSize)
   * Note that it is essential this generic function is really inlined,
@@ -875,12 +875,12 @@ index 08cf6b5..07d3e01 100644
 -        LZ4_wildCopy(op, ip, cpy);
 +        PULSAR_LZ4_wildCopy(op, ip, cpy);
          ip += length; op = cpy;
- 
+
          /* get offset */
 -        match = cpy - LZ4_readLE16(ip); ip+=2;
 +        match = cpy - PULSAR_LZ4_readLE16(ip); ip+=2;
          if ((checkOffset) && (unlikely(match < lowLimit))) goto _output_error;   /* Error : offset outside destination buffer */
- 
+
          /* get matchlength */
 @@ -1253,23 +1253,23 @@ FORCE_INLINE int LZ4_decompress_generic(
              op[2] = match[2];
@@ -891,7 +891,7 @@ index 08cf6b5..07d3e01 100644
              op += 8; match -= dec64;
 -        } else { LZ4_copy8(op, match); op+=8; match+=8; }
 +        } else { PULSAR_LZ4_copy8(op, match); op+=8; match+=8; }
- 
+
          if (unlikely(cpy>oend-12))
          {
              if (cpy > oend-LASTLITERALS) goto _output_error;    /* Error : last LASTLITERALS bytes must be literals */
@@ -909,40 +909,40 @@ index 08cf6b5..07d3e01 100644
 +            PULSAR_LZ4_wildCopy(op, match, cpy);
          op=cpy;   /* correction */
      }
- 
+
 @@ -1285,19 +1285,19 @@ _output_error:
  }
- 
- 
+
+
 -int LZ4_decompress_safe(const char* source, char* dest, int compressedSize, int maxDecompressedSize)
 +int PULSAR_LZ4_decompress_safe(const char* source, char* dest, int compressedSize, int maxDecompressedSize)
  {
 -    return LZ4_decompress_generic(source, dest, compressedSize, maxDecompressedSize, endOnInputSize, full, 0, noDict, (BYTE*)dest, NULL, 0);
 +    return PULSAR_LZ4_decompress_generic(source, dest, compressedSize, maxDecompressedSize, endOnInputSize, full, 0, noDict, (BYTE*)dest, NULL, 0);
  }
- 
+
 -int LZ4_decompress_safe_partial(const char* source, char* dest, int compressedSize, int targetOutputSize, int maxDecompressedSize)
 +int PULSAR_LZ4_decompress_safe_partial(const char* source, char* dest, int compressedSize, int targetOutputSize, int maxDecompressedSize)
  {
 -    return LZ4_decompress_generic(source, dest, compressedSize, maxDecompressedSize, endOnInputSize, partial, targetOutputSize, noDict, (BYTE*)dest, NULL, 0);
 +    return PULSAR_LZ4_decompress_generic(source, dest, compressedSize, maxDecompressedSize, endOnInputSize, partial, targetOutputSize, noDict, (BYTE*)dest, NULL, 0);
  }
- 
+
 -int LZ4_decompress_fast(const char* source, char* dest, int originalSize)
 +int PULSAR_LZ4_decompress_fast(const char* source, char* dest, int originalSize)
  {
 -    return LZ4_decompress_generic(source, dest, 0, originalSize, endOnOutputSize, full, 0, withPrefix64k, (BYTE*)(dest - 64 KB), NULL, 64 KB);
 +    return PULSAR_LZ4_decompress_generic(source, dest, 0, originalSize, endOnOutputSize, full, 0, withPrefix64k, (BYTE*)(dest - 64 KB), NULL, 64 KB);
  }
- 
- 
+
+
 @@ -1309,35 +1309,35 @@ typedef struct
      size_t extDictSize;
      const BYTE* prefixEnd;
      size_t prefixSize;
 -} LZ4_streamDecode_t_internal;
 +} PULSAR_LZ4_streamDecode_t_internal;
- 
+
  /*
   * If you prefer dynamic allocation methods,
 - * LZ4_createStreamDecode()
@@ -957,7 +957,7 @@ index 08cf6b5..07d3e01 100644
 +    PULSAR_LZ4_streamDecode_t* lz4s = (PULSAR_LZ4_streamDecode_t*) ALLOCATOR(1, sizeof(PULSAR_LZ4_streamDecode_t));
      return lz4s;
  }
- 
+
 -int LZ4_freeStreamDecode (LZ4_streamDecode_t* LZ4_stream)
 +int PULSAR_LZ4_freeStreamDecode (PULSAR_LZ4_streamDecode_t* PULSAR_LZ4_stream)
  {
@@ -965,7 +965,7 @@ index 08cf6b5..07d3e01 100644
 +    FREEMEM(PULSAR_LZ4_stream);
      return 0;
  }
- 
+
  /*
 - * LZ4_setStreamDecode
 + * PULSAR_LZ4_setStreamDecode
@@ -995,7 +995,7 @@ index 08cf6b5..07d3e01 100644
 -    LZ4_streamDecode_t_internal* lz4sd = (LZ4_streamDecode_t_internal*) LZ4_streamDecode;
 +    PULSAR_LZ4_streamDecode_t_internal* lz4sd = (PULSAR_LZ4_streamDecode_t_internal*) PULSAR_LZ4_streamDecode;
      int result;
- 
+
      if (lz4sd->prefixEnd == (BYTE*)dest)
      {
 -        result = LZ4_decompress_generic(source, dest, compressedSize, maxOutputSize,
@@ -1015,14 +1015,14 @@ index 08cf6b5..07d3e01 100644
 @@ -1381,14 +1381,14 @@ int LZ4_decompress_safe_continue (LZ4_streamDecode_t* LZ4_streamDecode, const ch
      return result;
  }
- 
+
 -int LZ4_decompress_fast_continue (LZ4_streamDecode_t* LZ4_streamDecode, const char* source, char* dest, int originalSize)
 +int PULSAR_LZ4_decompress_fast_continue (PULSAR_LZ4_streamDecode_t* PULSAR_LZ4_streamDecode, const char* source, char* dest, int originalSize)
  {
 -    LZ4_streamDecode_t_internal* lz4sd = (LZ4_streamDecode_t_internal*) LZ4_streamDecode;
 +    PULSAR_LZ4_streamDecode_t_internal* lz4sd = (PULSAR_LZ4_streamDecode_t_internal*) PULSAR_LZ4_streamDecode;
      int result;
- 
+
      if (lz4sd->prefixEnd == (BYTE*)dest)
      {
 -        result = LZ4_decompress_generic(source, dest, 0, originalSize,
@@ -1042,7 +1042,7 @@ index 08cf6b5..07d3e01 100644
 @@ -1418,33 +1418,33 @@ Advanced decoding functions :
      the dictionary must be explicitly provided within parameters
  */
- 
+
 -FORCE_INLINE int LZ4_decompress_usingDict_generic(const char* source, char* dest, int compressedSize, int maxOutputSize, int safe, const char* dictStart, int dictSize)
 +FORCE_INLINE int PULSAR_LZ4_decompress_usingDict_generic(const char* source, char* dest, int compressedSize, int maxOutputSize, int safe, const char* dictStart, int dictSize)
  {
@@ -1060,21 +1060,21 @@ index 08cf6b5..07d3e01 100644
 -    return LZ4_decompress_generic(source, dest, compressedSize, maxOutputSize, safe, full, 0, usingExtDict, (BYTE*)dest, (const BYTE*)dictStart, dictSize);
 +    return PULSAR_LZ4_decompress_generic(source, dest, compressedSize, maxOutputSize, safe, full, 0, usingExtDict, (BYTE*)dest, (const BYTE*)dictStart, dictSize);
  }
- 
+
 -int LZ4_decompress_safe_usingDict(const char* source, char* dest, int compressedSize, int maxOutputSize, const char* dictStart, int dictSize)
 +int PULSAR_LZ4_decompress_safe_usingDict(const char* source, char* dest, int compressedSize, int maxOutputSize, const char* dictStart, int dictSize)
  {
 -    return LZ4_decompress_usingDict_generic(source, dest, compressedSize, maxOutputSize, 1, dictStart, dictSize);
 +    return PULSAR_LZ4_decompress_usingDict_generic(source, dest, compressedSize, maxOutputSize, 1, dictStart, dictSize);
  }
- 
+
 -int LZ4_decompress_fast_usingDict(const char* source, char* dest, int originalSize, const char* dictStart, int dictSize)
 +int PULSAR_LZ4_decompress_fast_usingDict(const char* source, char* dest, int originalSize, const char* dictStart, int dictSize)
  {
 -    return LZ4_decompress_usingDict_generic(source, dest, 0, originalSize, 0, dictStart, dictSize);
 +    return PULSAR_LZ4_decompress_usingDict_generic(source, dest, 0, originalSize, 0, dictStart, dictSize);
  }
- 
+
  /* debug function */
 -int LZ4_decompress_safe_forceExtDict(const char* source, char* dest, int compressedSize, int maxOutputSize, const char* dictStart, int dictSize)
 +int PULSAR_LZ4_decompress_safe_forceExtDict(const char* source, char* dest, int compressedSize, int maxOutputSize, const char* dictStart, int dictSize)
@@ -1082,8 +1082,8 @@ index 08cf6b5..07d3e01 100644
 -    return LZ4_decompress_generic(source, dest, compressedSize, maxOutputSize, endOnInputSize, full, 0, usingExtDict, (BYTE*)dest, (const BYTE*)dictStart, dictSize);
 +    return PULSAR_LZ4_decompress_generic(source, dest, compressedSize, maxOutputSize, endOnInputSize, full, 0, usingExtDict, (BYTE*)dest, (const BYTE*)dictStart, dictSize);
  }
- 
- 
+
+
 @@ -1452,64 +1452,64 @@ int LZ4_decompress_safe_forceExtDict(const char* source, char* dest, int compres
  *  Obsolete Functions
  ***************************************************/
@@ -1100,7 +1100,7 @@ index 08cf6b5..07d3e01 100644
 +int PULSAR_LZ4_compress_withState (void* state, const char* src, char* dst, int srcSize) { return PULSAR_LZ4_compress_fast_extState(state, src, dst, srcSize, PULSAR_LZ4_compressBound(srcSize), 1); }
 +int PULSAR_LZ4_compress_limitedOutput_continue (PULSAR_LZ4_stream_t* PULSAR_LZ4_stream, const char* src, char* dst, int srcSize, int maxDstSize) { return PULSAR_LZ4_compress_fast_continue(PULSAR_LZ4_stream, src, dst, srcSize, maxDstSize, 1); }
 +int PULSAR_LZ4_compress_continue (PULSAR_LZ4_stream_t* PULSAR_LZ4_stream, const char* source, char* dest, int inputSize) { return PULSAR_LZ4_compress_fast_continue(PULSAR_LZ4_stream, source, dest, inputSize, PULSAR_LZ4_compressBound(inputSize), 1); }
- 
+
  /*
  These function names are deprecated and should no longer be used.
  They are only provided here for compatibility with older user programs.
@@ -1113,20 +1113,20 @@ index 08cf6b5..07d3e01 100644
 -int LZ4_uncompress_unknownOutputSize (const char* source, char* dest, int isize, int maxOutputSize) { return LZ4_decompress_safe(source, dest, isize, maxOutputSize); }
 +int PULSAR_LZ4_uncompress (const char* source, char* dest, int outputSize) { return PULSAR_LZ4_decompress_fast(source, dest, outputSize); }
 +int PULSAR_LZ4_uncompress_unknownOutputSize (const char* source, char* dest, int isize, int maxOutputSize) { return PULSAR_LZ4_decompress_safe(source, dest, isize, maxOutputSize); }
- 
- 
+
+
  /* Obsolete Streaming functions */
- 
+
 -int LZ4_sizeofStreamState() { return LZ4_STREAMSIZE; }
 +int PULSAR_LZ4_sizeofStreamState() { return LZ4_STREAMSIZE; }
- 
+
 -static void LZ4_init(LZ4_stream_t_internal* lz4ds, BYTE* base)
 +static void PULSAR_LZ4_init(PULSAR_LZ4_stream_t_internal* lz4ds, BYTE* base)
  {
      MEM_INIT(lz4ds, 0, LZ4_STREAMSIZE);
      lz4ds->bufferStart = base;
  }
- 
+
 -int LZ4_resetStreamState(void* state, char* inputBuffer)
 +int PULSAR_LZ4_resetStreamState(void* state, char* inputBuffer)
  {
@@ -1135,7 +1135,7 @@ index 08cf6b5..07d3e01 100644
 +    PULSAR_LZ4_init((PULSAR_LZ4_stream_t_internal*)state, (BYTE*)inputBuffer);
      return 0;
  }
- 
+
 -void* LZ4_create (char* inputBuffer)
 +void* PULSAR_LZ4_create (char* inputBuffer)
  {
@@ -1144,7 +1144,7 @@ index 08cf6b5..07d3e01 100644
 +    PULSAR_LZ4_init ((PULSAR_LZ4_stream_t_internal*)lz4ds, (BYTE*)inputBuffer);
      return lz4ds;
  }
- 
+
 -char* LZ4_slideInputBuffer (void* LZ4_Data)
 +char* PULSAR_LZ4_slideInputBuffer (void* LZ4_Data)
  {
@@ -1154,23 +1154,23 @@ index 08cf6b5..07d3e01 100644
 +    int dictSize = PULSAR_LZ4_saveDict((PULSAR_LZ4_stream_t*)LZ4_Data, (char*)ctx->bufferStart, 64 KB);
      return (char*)(ctx->bufferStart + dictSize);
  }
- 
+
  /* Obsolete streaming decompression functions */
- 
+
 -int LZ4_decompress_safe_withPrefix64k(const char* source, char* dest, int compressedSize, int maxOutputSize)
 +int PULSAR_LZ4_decompress_safe_withPrefix64k(const char* source, char* dest, int compressedSize, int maxOutputSize)
  {
 -    return LZ4_decompress_generic(source, dest, compressedSize, maxOutputSize, endOnInputSize, full, 0, withPrefix64k, (BYTE*)dest - 64 KB, NULL, 64 KB);
 +    return PULSAR_LZ4_decompress_generic(source, dest, compressedSize, maxOutputSize, endOnInputSize, full, 0, withPrefix64k, (BYTE*)dest - 64 KB, NULL, 64 KB);
  }
- 
+
 -int LZ4_decompress_fast_withPrefix64k(const char* source, char* dest, int originalSize)
 +int PULSAR_LZ4_decompress_fast_withPrefix64k(const char* source, char* dest, int originalSize)
  {
 -    return LZ4_decompress_generic(source, dest, 0, originalSize, endOnOutputSize, full, 0, withPrefix64k, (BYTE*)dest - 64 KB, NULL, 64 KB);
 +    return PULSAR_LZ4_decompress_generic(source, dest, 0, originalSize, endOnOutputSize, full, 0, withPrefix64k, (BYTE*)dest - 64 KB, NULL, 64 KB);
  }
- 
+
  #endif   /* LZ4_COMMONDEFS_ONLY */
 diff --git a/pulsar-client-cpp/lib/lz4/lz4.h b/pulsar-client-cpp/lib/lz4/lz4.h
 index c68232a..df593fe 100644
@@ -1182,18 +1182,18 @@ index c68232a..df593fe 100644
  #define LZ4_VERSION_NUMBER (LZ4_VERSION_MAJOR * 100 * 100 + LZ4_VERSION_MINOR * 100 + LZ4_VERSION_RELEASE)
 -int LZ4_versionNumber(void);
 +int PULSAR_LZ4_versionNumber(void);
- 
+
  /**************************************
   *  Tuning parameter
 @@ -69,14 +69,14 @@ int LZ4_versionNumber(void);
   *  Simple Functions
   **************************************/
- 
+
 -int LZ4_compress_default(const char* source, char* dest, int sourceSize, int maxDestSize);
 -int LZ4_decompress_safe(const char* source, char* dest, int compressedSize, int maxDecompressedSize);
 +int PULSAR_LZ4_compress_default(const char* source, char* dest, int sourceSize, int maxDestSize);
 +int PULSAR_LZ4_decompress_safe(const char* source, char* dest, int compressedSize, int maxDecompressedSize);
- 
+
  /*
 -LZ4_compress_default() :
 +PULSAR_LZ4_compress_default() :
@@ -1207,7 +1207,7 @@ index c68232a..df593fe 100644
 @@ -87,7 +87,7 @@ LZ4_compress_default() :
          return : the number of bytes written into buffer 'dest' (necessarily <= maxOutputSize)
                or 0 if compression fails
- 
+
 -LZ4_decompress_safe() :
 +PULSAR_LZ4_decompress_safe() :
      compressedSize : is the precise full size of the compressed block.
@@ -1215,7 +1215,7 @@ index c68232a..df593fe 100644
      return : the number of bytes decompressed into destination buffer (necessarily <= maxDecompressedSize)
 @@ -106,42 +106,42 @@ result.
      ((unsigned)(isize) > (unsigned)LZ4_MAX_INPUT_SIZE ? 0 : (isize) + ((isize) / 255) + 16)
- 
+
  /*
 -LZ4_compressBound() :
 +PULSAR_LZ4_compressBound() :
@@ -1232,7 +1232,7 @@ index c68232a..df593fe 100644
  */
 -int LZ4_compressBound(int inputSize);
 +int PULSAR_LZ4_compressBound(int inputSize);
- 
+
  /*
 -LZ4_compress_fast() :
 -    Same as LZ4_compress_default(), but allows to select an "acceleration" factor.
@@ -1246,7 +1246,7 @@ index c68232a..df593fe 100644
  */
 -int LZ4_compress_fast(const char* source, char* dest, int sourceSize, int maxDestSize, int acceleration);
 +int PULSAR_LZ4_compress_fast(const char* source, char* dest, int sourceSize, int maxDestSize, int acceleration);
- 
+
  /*
 -LZ4_compress_fast_extState() :
 +PULSAR_LZ4_compress_fast_extState() :
@@ -1261,7 +1261,7 @@ index c68232a..df593fe 100644
 +int PULSAR_LZ4_sizeofState(void);
 +int PULSAR_LZ4_compress_fast_extState(void* state, const char* source, char* dest, int inputSize, int maxDestSize,
                                 int acceleration);
- 
+
  /*
 -LZ4_compress_destSize() :
 +PULSAR_LZ4_compress_destSize() :
@@ -1274,7 +1274,7 @@ index c68232a..df593fe 100644
  */
 -int LZ4_compress_destSize(const char* source, char* dest, int* sourceSizePtr, int targetDestSize);
 +int PULSAR_LZ4_compress_destSize(const char* source, char* dest, int* sourceSizePtr, int targetDestSize);
- 
+
  /*
 -LZ4_decompress_fast() :
 +PULSAR_LZ4_decompress_fast() :
@@ -1292,7 +1292,7 @@ index c68232a..df593fe 100644
  */
 -int LZ4_decompress_fast(const char* source, char* dest, int originalSize);
 +int PULSAR_LZ4_decompress_fast(const char* source, char* dest, int originalSize);
- 
+
  /*
 -LZ4_decompress_safe_partial() :
 +PULSAR_LZ4_decompress_safe_partial() :
@@ -1306,7 +1306,7 @@ index c68232a..df593fe 100644
 -int LZ4_decompress_safe_partial(const char* source, char* dest, int compressedSize, int targetOutputSize,
 +int PULSAR_LZ4_decompress_safe_partial(const char* source, char* dest, int compressedSize, int targetOutputSize,
                                  int maxDecompressedSize);
- 
+
  /***********************************************
 @@ -191,7 +191,7 @@ int LZ4_decompress_safe_partial(const char* source, char* dest, int compressedSi
  #define LZ4_STREAMSIZE_U64 ((1 << (LZ4_MEMORY_USAGE - 3)) + 4)
@@ -1324,7 +1324,7 @@ index c68232a..df593fe 100644
 -} LZ4_stream_t;
 +} PULSAR_LZ4_stream_t;
  // clang-format on
- 
+
  /*
 - * LZ4_resetStream
 - * Use this function to init an allocated LZ4_stream_t structure
@@ -1333,7 +1333,7 @@ index c68232a..df593fe 100644
   */
 -void LZ4_resetStream(LZ4_stream_t* streamPtr);
 +void PULSAR_LZ4_resetStream(PULSAR_LZ4_stream_t* streamPtr);
- 
+
  /*
 - * LZ4_createStream will allocate and initialize an LZ4_stream_t structure
 - * LZ4_freeStream releases its memory.
@@ -1347,7 +1347,7 @@ index c68232a..df593fe 100644
 -int LZ4_freeStream(LZ4_stream_t* streamPtr);
 +PULSAR_LZ4_stream_t* PULSAR_LZ4_createStream(void);
 +int PULSAR_LZ4_freeStream(PULSAR_LZ4_stream_t* streamPtr);
- 
+
  /*
 - * LZ4_loadDict
 - * Use this function to load a static dictionary into LZ4_stream.
@@ -1359,7 +1359,7 @@ index c68232a..df593fe 100644
   */
 -int LZ4_loadDict(LZ4_stream_t* streamPtr, const char* dictionary, int dictSize);
 +int PULSAR_LZ4_loadDict(PULSAR_LZ4_stream_t* streamPtr, const char* dictionary, int dictSize);
- 
+
  /*
 - * LZ4_compress_fast_continue
 + * PULSAR_LZ4_compress_fast_continue
@@ -1375,7 +1375,7 @@ index c68232a..df593fe 100644
 -int LZ4_compress_fast_continue(LZ4_stream_t* streamPtr, const char* src, char* dst, int srcSize,
 +int PULSAR_LZ4_compress_fast_continue(PULSAR_LZ4_stream_t* streamPtr, const char* src, char* dst, int srcSize,
                                 int maxDstSize, int acceleration);
- 
+
  /*
 - * LZ4_saveDict
 + * PULSAR_LZ4_saveDict
@@ -1389,7 +1389,7 @@ index c68232a..df593fe 100644
   */
 -int LZ4_saveDict(LZ4_stream_t* streamPtr, char* safeBuffer, int dictSize);
 +int PULSAR_LZ4_saveDict(PULSAR_LZ4_stream_t* streamPtr, char* safeBuffer, int dictSize);
- 
+
  /************************************************
   *  Streaming Decompression Functions
 @@ -259,29 +259,29 @@ int LZ4_saveDict(LZ4_stream_t* streamPtr, char* safeBuffer, int dictSize);
@@ -1399,7 +1399,7 @@ index c68232a..df593fe 100644
 -} LZ4_streamDecode_t;
 +} PULSAR_LZ4_streamDecode_t;
  // clang-format on
- 
+
  /*
 - * LZ4_streamDecode_t
 + * PULSAR_LZ4_streamDecode_t
@@ -1419,7 +1419,7 @@ index c68232a..df593fe 100644
 -int LZ4_freeStreamDecode(LZ4_streamDecode_t* LZ4_stream);
 +PULSAR_LZ4_streamDecode_t* PULSAR_LZ4_createStreamDecode(void);
 +int PULSAR_LZ4_freeStreamDecode(PULSAR_LZ4_streamDecode_t* PULSAR_LZ4_stream);
- 
+
  /*
 - * LZ4_setStreamDecode
 + * PULSAR_LZ4_setStreamDecode
@@ -1429,7 +1429,7 @@ index c68232a..df593fe 100644
   */
 -int LZ4_setStreamDecode(LZ4_streamDecode_t* LZ4_streamDecode, const char* dictionary, int dictSize);
 +int PULSAR_LZ4_setStreamDecode(PULSAR_LZ4_streamDecode_t* PULSAR_LZ4_streamDecode, const char* dictionary, int dictSize);
- 
+
  /*
  *_continue() :
 @@ -301,23 +301,23 @@ block.
@@ -1445,7 +1445,7 @@ index c68232a..df593fe 100644
 -int LZ4_decompress_fast_continue(LZ4_streamDecode_t* LZ4_streamDecode, const char* source, char* dest,
 +int PULSAR_LZ4_decompress_fast_continue(PULSAR_LZ4_streamDecode_t* PULSAR_LZ4_streamDecode, const char* source, char* dest,
                                   int originalSize);
- 
+
  /*
  Advanced decoding functions :
  *_usingDict() :
@@ -1461,10 +1461,10 @@ index c68232a..df593fe 100644
 -int LZ4_decompress_fast_usingDict(const char* source, char* dest, int originalSize, const char* dictStart,
 +int PULSAR_LZ4_decompress_fast_usingDict(const char* source, char* dest, int originalSize, const char* dictStart,
                                    int dictSize);
- 
+
  /**************************************
 @@ -346,36 +346,36 @@ int LZ4_decompress_fast_usingDict(const char* source, char* dest, int originalSi
- 
+
  /* Obsolete compression functions */
  /* These functions are planned to start generate warnings by r131 approximately */
 -int LZ4_compress(const char* source, char* dest, int sourceSize);
@@ -1481,7 +1481,7 @@ index c68232a..df593fe 100644
 +int PULSAR_LZ4_compress_continue(PULSAR_LZ4_stream_t* PULSAR_LZ4_streamPtr, const char* source, char* dest, int inputSize);
 +int PULSAR_LZ4_compress_limitedOutput_continue(PULSAR_LZ4_stream_t* PULSAR_LZ4_streamPtr, const char* source, char* dest,
                                          int inputSize, int maxOutputSize);
- 
+
  /* Obsolete decompression functions */
  /* These function names are completely deprecated and must no longer be used.
     They are only provided here for compatibility with older programs.
@@ -1495,7 +1495,7 @@ index c68232a..df593fe 100644
 -/* int LZ4_uncompress_unknownOutputSize (const char* source, char* dest, int isize, int maxOutputSize); */
 +/* int PULSAR_LZ4_uncompress (const char* source, char* dest, int outputSize); */
 +/* int PULSAR_LZ4_uncompress_unknownOutputSize (const char* source, char* dest, int isize, int maxOutputSize); */
- 
+
  /* Obsolete streaming functions; use new streaming interface whenever possible */
 -LZ4_DEPRECATED("use LZ4_createStream() instead") void* LZ4_create(char* inputBuffer);
 -LZ4_DEPRECATED("use LZ4_createStream() instead") int LZ4_sizeofStreamState(void);
@@ -1505,7 +1505,7 @@ index c68232a..df593fe 100644
 +LZ4_DEPRECATED("use PULSAR_LZ4_createStream() instead") int PULSAR_LZ4_sizeofStreamState(void);
 +LZ4_DEPRECATED("use PULSAR_LZ4_resetStream() instead") int PULSAR_LZ4_resetStreamState(void* state, char* inputBuffer);
 +LZ4_DEPRECATED("use PULSAR_LZ4_saveDict() instead") char* PULSAR_LZ4_slideInputBuffer(void* state);
- 
+
  /* Obsolete streaming decoding functions */
 -LZ4_DEPRECATED("use LZ4_decompress_safe_usingDict() instead")
 -int LZ4_decompress_safe_withPrefix64k(const char* src, char* dst, int compressedSize, int maxDstSize);
@@ -1515,6 +1515,6 @@ index c68232a..df593fe 100644
 +int PULSAR_LZ4_decompress_safe_withPrefix64k(const char* src, char* dst, int compressedSize, int maxDstSize);
 +LZ4_DEPRECATED("use PULSAR_LZ4_decompress_fast_usingDict() instead")
 +int PULSAR_LZ4_decompress_fast_withPrefix64k(const char* src, char* dst, int originalSize);
- 
+
  #if defined(__cplusplus)
  }

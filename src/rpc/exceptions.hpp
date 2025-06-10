@@ -1,4 +1,4 @@
-// Copyright 2024 Memgraph Ltd.
+// Copyright 2025 Memgraph Ltd.
 //
 // Use of this software is governed by the Business Source License
 // included in the file licenses/BSL.txt; by using this file, you agree to be bound by the terms of the Business Source
@@ -48,7 +48,8 @@ class GenericRpcFailedException : public RpcFailedException {
 class SlkRpcFailedException : public RpcFailedException {
  public:
   SlkRpcFailedException()
-      : RpcFailedException("Received malformed message from cluster. Please raise an issue on Memgraph GitHub issues.") {}
+      : RpcFailedException(
+            "Received malformed message from cluster. Please raise an issue on Memgraph GitHub issues.") {}
 
   SPECIALIZE_GET_EXCEPTION_NAME(SlkRpcFailedException);
 };

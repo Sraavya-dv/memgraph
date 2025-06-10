@@ -1,6 +1,7 @@
 import random
 import time
 from abc import ABC
+
 from gqlalchemy import Memgraph
 
 
@@ -14,6 +15,7 @@ class Worker(ABC):
     def run(self):
         pass
 
+
 class BasicWorker(Worker):
     """Executes a fixed query multiple times."""
 
@@ -26,7 +28,7 @@ class BasicWorker(Worker):
     def run(self):
         """Executes the assigned query in a loop."""
         print(f"Starting worker '{self._name}'...")
-        
+
         memgraph = Memgraph(self._query_host, self._query_port)
         for i in range(self._repetitions):
             print(f"Worker '{self._name}' executing query: {self._query}")

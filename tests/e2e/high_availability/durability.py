@@ -16,15 +16,15 @@ from functools import partial
 import interactive_mg_runner
 import pytest
 from common import (
-    connect,
-    count_files,
-    execute_and_fetch_all,
-    execute_and_ignore_dead_replica,
-    get_data_path,
-    get_logs_path,
-    get_vertex_count,
-    list_directory_contents,
-    show_instances,
+  connect,
+  count_files,
+  execute_and_fetch_all,
+  execute_and_ignore_dead_replica,
+  get_data_path,
+  get_logs_path,
+  get_vertex_count,
+  list_directory_contents,
+  show_instances,
 )
 from mg_utils import mg_sleep_and_assert
 

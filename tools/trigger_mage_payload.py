@@ -7,12 +7,7 @@ def trigger_mage_payload(date: int) -> dict:
     build the dict to be dumped as JSON and used to trigger the MAGE daily build
     """
 
-    payload = {
-        "event_type": "trigger_daily_build",
-        "client_payload": {
-            "date": date
-        }
-    }
+    payload = {"event_type": "trigger_daily_build", "client_payload": {"date": date}}
 
     return payload
 

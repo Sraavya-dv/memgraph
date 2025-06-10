@@ -40,7 +40,8 @@ struct Trigger {
 
   void Execute(DbAccessor *dba, DatabaseAccessProtector db_acc, utils::MemoryResource *execution_memory,
                double max_execution_time_sec, std::atomic<bool> *is_shutting_down,
-               std::atomic<TransactionStatus> *transaction_status, const TriggerContext &context) const;
+               std::atomic<TransactionStatus> *transaction_status, const TriggerContext &context,
+               TriggerContextCollector *collector) const;
 
   bool operator==(const Trigger &other) const { return name_ == other.name_; }
   // NOLINTNEXTLINE (modernize-use-nullptr)

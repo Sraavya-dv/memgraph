@@ -1,19 +1,15 @@
 # Build Memgraph with Python 3.5+ support and run Memgraph so that it loads
 # this file as a Query Module. The procedure implemented in this module is just
 # a rewrite of the `example.c` procedure.
-import mgp
-
 import copy
+
+import mgp
 
 
 @mgp.read_proc
-def procedure(context: mgp.ProcCtx,
-              required_arg: mgp.Nullable[mgp.Any],
-              optional_arg: mgp.Nullable[mgp.Any] = None
-              ) -> mgp.Record(args=list,
-                              vertex_count=int,
-                              avg_degree=mgp.Number,
-                              props=mgp.Nullable[mgp.Map]):
+def procedure(
+    context: mgp.ProcCtx, required_arg: mgp.Nullable[mgp.Any], optional_arg: mgp.Nullable[mgp.Any] = None
+) -> mgp.Record(args=list, vertex_count=int, avg_degree=mgp.Number, props=mgp.Nullable[mgp.Map]):
     """
     This example procedure returns 4 fields.
 
@@ -37,7 +33,7 @@ def procedure(context: mgp.ProcCtx,
     if isinstance(required_arg, (mgp.Edge, mgp.Vertex)):
         props = dict(required_arg.properties.items())
     elif isinstance(required_arg, mgp.Path):
-        start_vertex, = required_arg.vertices
+        (start_vertex,) = required_arg.vertices
         props = dict(start_vertex.properties.items())
     # Count the vertices and edges in the database; this may take a while.
     vertex_count = 0
@@ -51,15 +47,13 @@ def procedure(context: mgp.ProcCtx,
     # Copy the received arguments to make it equivalent to the C example.
     args_copy = [copy.deepcopy(required_arg), copy.deepcopy(optional_arg)]
     # Multiple rows can be produced by returning an iterable of mgp.Record.
-    return mgp.Record(args=args_copy, vertex_count=vertex_count,
-                      avg_degree=avg_degree, props=props)
+    return mgp.Record(args=args_copy, vertex_count=vertex_count, avg_degree=avg_degree, props=props)
 
 
 @mgp.write_proc
-def write_procedure(context: mgp.ProcCtx,
-                    property_name: str,
-                    property_value: mgp.Nullable[mgp.Any]
-                    ) -> mgp.Record(created_vertex=mgp.Vertex):
+def write_procedure(
+    context: mgp.ProcCtx, property_name: str, property_value: mgp.Nullable[mgp.Any]
+) -> mgp.Record(created_vertex=mgp.Vertex):
     """
     This example procedure creates a new vertex with the specified property
     and connects it to all existing vertex which has the same property with

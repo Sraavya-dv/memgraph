@@ -10,7 +10,7 @@
 // licenses/APL.txt.
 
 #include "query/trigger.hpp"
-
+#include <iostream>
 #include "query/config.hpp"
 #include "query/context.hpp"
 #include "query/cypher_query_interpreter.hpp"
@@ -24,6 +24,8 @@
 #include "storage/v2/property_value.hpp"
 #include "utils/event_counter.hpp"
 #include "utils/memory.hpp"
+
+using namespace std;
 
 namespace memgraph::metrics {
 extern const Event TriggersExecuted;
@@ -193,7 +195,13 @@ std::shared_ptr<Trigger::TriggerPlan> Trigger::GetPlan(DbAccessor *db_accessor) 
 
 void Trigger::Execute(DbAccessor *dba, DatabaseAccessProtector db_acc, utils::MemoryResource *execution_memory,
                       const double max_execution_time_sec, std::atomic<bool> *is_shutting_down,
-                      std::atomic<TransactionStatus> *transaction_status, const TriggerContext &context) const {
+                      std::atomic<TransactionStatus> *transaction_status, const TriggerContext &context,
+                      TriggerContextCollector *collector) const {
+  std::cout << " Trigger executed: " << this->name_ << std::endl;
+  std::cout << "Trigger '" << this->name_ << "' context includes vertices:\n";
+  for (const auto &v : context.GetCreatedVertices()) {
+    std::cout << "  → GID " << v.object.Gid().AsUint() << std::endl;
+  }
   if (!context.ShouldEventTrigger(event_type_)) {
     return;
   }
@@ -216,6 +224,7 @@ void Trigger::Execute(DbAccessor *dba, DatabaseAccessProtector db_acc, utils::Me
   ctx.is_profile_query = false;
   ctx.evaluation_context.memory = execution_memory;
   ctx.db_acc = std::move(db_acc);
+  ctx.trigger_context_collector = collector;
 
   auto cursor = plan.plan().MakeCursor(execution_memory);
   Frame frame{plan.symbol_table().max_position(), execution_memory};
@@ -226,6 +235,7 @@ void Trigger::Execute(DbAccessor *dba, DatabaseAccessProtector db_acc, utils::Me
 
     frame[plan.symbol_table().at(identifier)] = context.GetTypedValue(tag, dba);
   }
+  std::cout << " Executing plan with collector: " << (ctx.trigger_context_collector != nullptr) << std::endl;
 
   while (cursor->Pull(frame, ctx))
     ;

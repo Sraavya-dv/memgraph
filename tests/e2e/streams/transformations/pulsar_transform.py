@@ -14,7 +14,6 @@ import mgp
 
 @mgp.transformation
 def simple(context: mgp.TransCtx, messages: mgp.Messages) -> mgp.Record(query=str, parameters=mgp.Map):
-
     result_queries = []
 
     for i in range(0, messages.total_messages()):
@@ -37,7 +36,6 @@ def simple(context: mgp.TransCtx, messages: mgp.Messages) -> mgp.Record(query=st
 
 @mgp.transformation
 def with_parameters(context: mgp.TransCtx, messages: mgp.Messages) -> mgp.Record(query=str, parameters=mgp.Map):
-
     result_queries = []
 
     for i in range(0, messages.total_messages()):

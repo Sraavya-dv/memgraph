@@ -1,25 +1,28 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-import logging
-import os
-import time
 import itertools
 import json
+import logging
+import os
 import subprocess
+import time
 from argparse import ArgumentParser
 from collections import OrderedDict
+
 from common import get_absolute_path
-from query_suite import QuerySuite, QueryParallelSuite
 from long_running_suite import LongRunningSuite
+from query_suite import QueryParallelSuite, QuerySuite
 
 log = logging.getLogger(__name__)
 
 try:
     import jail
+
     APOLLO = True
 except:
     import jail_faker as jail
+
     APOLLO = False
 
 
@@ -36,26 +39,24 @@ class Loader:
     QueryLoader is reusable. The generator approach makes it possible
     to generated different queries each time when executing a .py file.
     """
+
     def __init__(self, file_path):
         self.file_path = file_path
 
     def _queries(self, data):
-        """ Helper function for breaking down and filtering queries"""
-        for element in filter(lambda x: x is not None,
-                map(str.strip, data.replace("\n", " ").split(";"))):
+        """Helper function for breaking down and filtering queries"""
+        for element in filter(lambda x: x is not None, map(str.strip, data.replace("\n", " ").split(";"))):
             yield element
 
     def __call__(self):
-        """ Yields queries found in the given file_path one by one """
-        log.debug("Generating queries from file_path: %s",
-                  self.file_path)
+        """Yields queries found in the given file_path one by one"""
+        log.debug("Generating queries from file_path: %s", self.file_path)
         _, extension = os.path.splitext(self.file_path)
         if extension == ".cypher":
             with open(self.file_path) as f:
                 return self._queries(f.read())
         elif extension == ".py":
-            return self._queries(subprocess.check_output(
-                ["python3", self.file_path]).decode("ascii"))
+            return self._queries(subprocess.check_output(["python3", self.file_path]).decode("ascii"))
         elif extension == ".json":
             with open(self.file_path) as f:
                 return [json.load(f)].__iter__()
@@ -64,7 +65,6 @@ class Loader:
 
     def __repr__(self):
         return "(Loader<%s>)" % self.file_path
-
 
 
 def load_scenarios(args, known_keys, suite_groups):
@@ -105,8 +105,7 @@ def load_scenarios(args, known_keys, suite_groups):
         {group: (scenario, {config: query_generator_function})
     """
     argp = ArgumentParser("QuerySuite.scenarios argument parser")
-    argp.add_argument("--query-scenarios-root",
-                      default=get_absolute_path("groups"), dest="root")
+    argp.add_argument("--query-scenarios-root", default=get_absolute_path("groups"), dest="root")
     args, _ = argp.parse_known_args()
     log.info("Loading query scenarios from root: %s", args.root)
 
@@ -120,40 +119,36 @@ def load_scenarios(args, known_keys, suite_groups):
         # against typos in file naming).
         unknown_keys = set(config_dict) - known_keys
         if unknown_keys:
-            raise Exception("Unknown QuerySuite config elements: '%r'" %
-                            unknown_keys)
+            raise Exception("Unknown QuerySuite config elements: '%r'" % unknown_keys)
 
     def dir_content(root, predicate):
-        return [p for p in os.listdir(root)
-                if predicate(os.path.join(root, p))]
+        return [p for p in os.listdir(root) if predicate(os.path.join(root, p))]
 
     group_scenarios = OrderedDict()
     for group in dir_content(args.root, os.path.isdir):
-        if group not in suite_groups: continue
+        if group not in suite_groups:
+            continue
         log.info("Loading group: '%s'", group)
 
         group_scenarios[group] = []
         # Filter out hidden files: .gitignore, ...
-        files = dir_content(os.path.join(args.root, group),
-                lambda x: os.path.isfile(x) and os.path.basename(x)[0] != ".")
+        files = dir_content(
+            os.path.join(args.root, group), lambda x: os.path.isfile(x) and os.path.basename(x)[0] != "."
+        )
 
         # Process group default config.
         group_config = {}
-        fill_config_dict(group_config, os.path.join(args.root, group),
-                         [f for f in files if f.count(".") == 1])
+        fill_config_dict(group_config, os.path.join(args.root, group), [f for f in files if f.count(".") == 1])
 
         # Group files on scenario.
         for scenario_name, scenario_files in itertools.groupby(
-                filter(lambda f: f.count(".") == 2, sorted(files)),
-                lambda x: x.split(".")[0]):
+            filter(lambda f: f.count(".") == 2, sorted(files)), lambda x: x.split(".")[0]
+        ):
             log.info("Loading scenario: '%s'", scenario_name)
             scenario = dict(group_config)
-            fill_config_dict(scenario,
-                             os.path.join(args.root, group),
-                             scenario_files)
+            fill_config_dict(scenario, os.path.join(args.root, group), scenario_files)
             group_scenarios[group].append((scenario_name, scenario))
-            log.debug("Loaded config for scenario '%s'\n%r", scenario_name,
-                      scenario)
+            log.debug("Loaded config for scenario '%s'\n%r", scenario_name, scenario)
 
     return group_scenarios
 
@@ -164,17 +159,22 @@ def main():
     argp.add_argument("suite", help="Suite to run.")
     argp.add_argument("runner", help="Engine to use.")
     # named, optional arguments
-    argp.add_argument("--groups", nargs="+", help="Groups to run. If none are"
-                      " provided, all available grups are run.")
-    argp.add_argument("--scenarios", nargs="+", help="Scenarios to run. If "
-                      "none are provided, all available are run.")
-    argp.add_argument("--logging", default="INFO", choices=["INFO", "DEBUG"],
-                      help="Logging level")
-    argp.add_argument("--additional-run-fields", default={}, type=json.loads,
-                      help="Additional fields to add to the 'run', in JSON")
-    argp.add_argument("--no-strict", default=False, action="store_true",
-                      help="Ignores nonexisting groups instead of raising an "
-                           "exception")
+    argp.add_argument(
+        "--groups", nargs="+", help="Groups to run. If none are" " provided, all available grups are run."
+    )
+    argp.add_argument(
+        "--scenarios", nargs="+", help="Scenarios to run. If " "none are provided, all available are run."
+    )
+    argp.add_argument("--logging", default="INFO", choices=["INFO", "DEBUG"], help="Logging level")
+    argp.add_argument(
+        "--additional-run-fields", default={}, type=json.loads, help="Additional fields to add to the 'run', in JSON"
+    )
+    argp.add_argument(
+        "--no-strict",
+        default=False,
+        action="store_true",
+        help="Ignores nonexisting groups instead of raising an " "exception",
+    )
     args, remaining_args = argp.parse_known_args()
 
     if args.logging:
@@ -186,27 +186,23 @@ def main():
     log.info("Executing for suite '%s', runner '%s'", args.suite, args.runner)
 
     # Create suites.
-    suites = {"QuerySuite": QuerySuite,
-              "QueryParallelSuite": QueryParallelSuite,
-              "LongRunningSuite": LongRunningSuite}
+    suites = {"QuerySuite": QuerySuite, "QueryParallelSuite": QueryParallelSuite, "LongRunningSuite": LongRunningSuite}
     if args.suite not in suites:
-        raise Exception(
-            "Suite '{}' isn't registered. Registered suites are: {}".format(
-                args.suite, suites))
+        raise Exception("Suite '{}' isn't registered. Registered suites are: {}".format(args.suite, suites))
     suite = suites[args.suite](remaining_args)
 
     # Load scenarios.
-    group_scenarios = load_scenarios(
-            remaining_args, suite.KNOWN_KEYS, suite.groups())
-    log.info("Loaded %d groups, with a total of %d scenarios",
-             len(group_scenarios),
-             sum([len(x) for x in group_scenarios.values()]))
+    group_scenarios = load_scenarios(remaining_args, suite.KNOWN_KEYS, suite.groups())
+    log.info(
+        "Loaded %d groups, with a total of %d scenarios",
+        len(group_scenarios),
+        sum([len(x) for x in group_scenarios.values()]),
+    )
 
     # Create runner.
     runners = suite.runners()
     if args.runner not in runners:
-        raise Exception("Runner '{}' not registered for suite '{}'".format(
-            args.runner, args.suite))
+        raise Exception("Runner '{}' not registered for suite '{}'".format(args.runner, args.suite))
     runner = runners[args.runner](remaining_args)
 
     # Validate groups (if provided).
@@ -214,8 +210,7 @@ def main():
     if args.groups:
         for group in args.groups:
             if group not in suite.groups():
-                msg = "Group '{}' isn't registered for suite '{}'".format(
-                        group, suite)
+                msg = "Group '{}' isn't registered for suite '{}'".format(group, suite)
                 if args.no_strict:
                     log.warn(msg)
                 else:
@@ -247,8 +242,7 @@ def main():
     # Run scenarios.
     log.info("Executing %d scenarios", len(filtered_scenarios))
     for (group, scenario_name), scenario in sorted(filtered_scenarios.items()):
-        log.info("Executing group.scenario '%s.%s' with elements %s",
-                 group, scenario_name, list(scenario.keys()))
+        log.info("Executing group.scenario '%s.%s' with elements %s", group, scenario_name, list(scenario.keys()))
         results.append(suite.run(scenario, group, scenario_name, runner))
 
     # Print summary.
@@ -262,8 +256,7 @@ def main():
     # The if block is here because the results from all suites
     # aren't compatible with the export below.
     if type(suite) not in [QuerySuite, QueryParallelSuite]:
-        log.warning("The results from the suite "
-                    "aren't compatible with the apollo measurements export.")
+        log.warning("The results from the suite " "aren't compatible with the apollo measurements export.")
         return
 
     # Export data points.
@@ -274,8 +267,7 @@ def main():
         for row in results:
             group, scenario = row.pop("group_name"), row.pop("scenario_name")
             for header in headers:
-                f.write("{}.{}.{} {:.20f}\n".format(group, scenario,
-                        header, row[header]["median"]))
+                f.write("{}.{}.{} {:.20f}\n".format(group, scenario, header, row[header]["median"]))
 
 
 if __name__ == "__main__":

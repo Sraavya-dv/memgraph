@@ -32,10 +32,10 @@ Alternatively you can route stuff and avoid using an intermediary file:
 Maybe there is a nicer way to route it?
 """
 
-import sys
-import re
-import os
 import json
+import os
+import re
+import sys
 from argparse import ArgumentParser
 from collections import defaultdict
 
@@ -44,14 +44,16 @@ from matplotlib import pyplot as plt
 
 def parse_args():
     argp = ArgumentParser(description=__doc__)
-    argp.add_argument("input_file", nargs="?",
-                      help="Path to file with JSON data. If not provided data "
-                      "is read from stdin")
-    argp.add_argument("--output-path", required=False,
-                      help="Path to a folder where the plots should be saved. "
-                      " If not provided the plots are displayed in the GUI.")
-    argp.add_argument("--output-type", required=False, default="png",
-                      help="If saving plot files use this extension.")
+    argp.add_argument(
+        "input_file", nargs="?", help="Path to file with JSON data. If not provided data " "is read from stdin"
+    )
+    argp.add_argument(
+        "--output-path",
+        required=False,
+        help="Path to a folder where the plots should be saved. "
+        " If not provided the plots are displayed in the GUI.",
+    )
+    argp.add_argument("--output-type", required=False, default="png", help="If saving plot files use this extension.")
     return argp.parse_args()
 
 
@@ -64,8 +66,8 @@ def convert_num(string):
     if not suffix_re:
         return float(string)
 
-    suffix = string[suffix_re.start():]
-    number = float(string[:suffix_re.start()])
+    suffix = string[suffix_re.start() :]
+    number = float(string[: suffix_re.start()])
 
     if suffix == "k":
         number *= 1000
@@ -103,8 +105,7 @@ def main():
 
     for bench in data["benchmarks"]:
         name, x = bench["name"].rsplit("/", 1)
-        benchmarks[name].append((convert_num(x), bench["real_time"],
-                                bench["time_unit"]))
+        benchmarks[name].append((convert_num(x), bench["real_time"], bench["time_unit"]))
 
     # group benchmarks on name prefix
     # one group will be one plot with possibly multiple lines
@@ -123,8 +124,7 @@ def main():
         for measurement in measurements.values():
             units.update(k[2] for k in measurement)
         if len(units) > 1:
-            raise ValueError(
-                "Multiple time units in a single plot: %r" % units)
+            raise ValueError("Multiple time units in a single plot: %r" % units)
 
     # plot all groups
     for group_name, measurements in benchmarks_groups.items():
@@ -145,8 +145,7 @@ def main():
         if args.output_path:
             if not os.path.exists(args.output_path):
                 os.makedirs(args.output_path, exist_ok=True)
-            plt.savefig(os.path.join(
-                args.output_path, group_name + "." + args.output_type))
+            plt.savefig(os.path.join(args.output_path, group_name + "." + args.output_type))
         else:
             plt.show()
 

@@ -138,10 +138,10 @@ install() {
         echo "NOTE: export LANG=en_US.utf8"
     fi
 
-    # enable CRB repo 
+    # enable CRB repo
     dnf install -y dnf-plugins-core
     dnf config-manager --set-enabled crb
-    
+
     dnf update -y
     dnf install -y wget git python3 python3-pip
 

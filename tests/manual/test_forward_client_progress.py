@@ -44,12 +44,12 @@ ever receives a successful response for a write that it does, that
 this counter has advanced by one.
 """
 
-from os import kill
-from multiprocessing import Process, Event
-from uuid import uuid4
-from time import sleep
-
 import argparse
+from multiprocessing import Event, Process
+from os import kill
+from time import sleep
+from uuid import uuid4
+
 import mgclient
 
 shutdown = Event()

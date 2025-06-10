@@ -7,10 +7,10 @@ import subprocess
 import time
 from argparse import Namespace as Args
 from typing import Dict, List, Optional
-from gqlalchemy import Memgraph
-import yaml
-from workers import get_worker_object, get_worker_steps
 
+import yaml
+from gqlalchemy import Memgraph
+from workers import get_worker_object, get_worker_steps
 
 # Paths
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
@@ -143,10 +143,10 @@ def run_custom_workloads(script_path: str, config: Config) -> Optional[Dict[str,
 
             # Run import queries
             print(f"Started import for workload '{workload_name}'")
-            
+
             query_host = workload.get("querying", {}).get("host", "127.0.0.1")
             query_port = workload.get("querying", {}).get("port", 7687)
-            
+
             memgraph = Memgraph(host=query_host, port=query_port)
             for query in workload.get("import", {}).get("queries", []):
                 print(f"Executing query: {query}")
@@ -161,7 +161,7 @@ def run_custom_workloads(script_path: str, config: Config) -> Optional[Dict[str,
             for step in steps:
                 print(f"Running step {step}.")
 
-                for worker in [x for x in workers if x.get("step", 1) == step]:              
+                for worker in [x for x in workers if x.get("step", 1) == step]:
                     # Override with workload global querying if not set on the worker
                     if "querying" not in worker.keys():
                         worker["querying"] = {"host": query_host, "port": query_port}

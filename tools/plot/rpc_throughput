@@ -7,14 +7,15 @@ To obtain data used for this script use:
 `./tests/benchmark/rpc --benchmark_out=test.json --benchmark_out_format=json`
 """
 
-import json
-import collections
-import os
 import argparse
-import numpy
+import collections
+import json
+import os
 import shutil
 
 import matplotlib
+import numpy
+
 # Must set "Agg" backend before importing pyplot
 # This is so the script works on headless machines (without X11)
 matplotlib.use("Agg")
@@ -25,12 +26,9 @@ def parse_args():
     argp = argparse.ArgumentParser(description=__doc__)
     argp.add_argument("input", help="Load data from file.")
     argp.add_argument("output", help="Save plots to this directory.")
-    argp.add_argument("--plot-width", type=int, default=1920,
-                      help="Pixel width of generated plots.")
-    argp.add_argument("--plot-height", type=int, default=1080,
-                      help="Pixel height of generated plots.")
-    argp.add_argument("--plot-dpi", type=int, default=96,
-                      help="DPI of generated plots.")
+    argp.add_argument("--plot-width", type=int, default=1920, help="Pixel width of generated plots.")
+    argp.add_argument("--plot-height", type=int, default=1080, help="Pixel height of generated plots.")
+    argp.add_argument("--plot-dpi", type=int, default=96, help="DPI of generated plots.")
     return argp.parse_args()
 
 
@@ -59,13 +57,10 @@ def dehumanize(num):
 def autolabel(ax, rects):
     for rect in rects:
         height = rect.get_height()
-        ax.text(rect.get_x() + rect.get_width()/2., 1.00*height,
-                humanize(height),
-                ha="center", va="bottom")
+        ax.text(rect.get_x() + rect.get_width() / 2.0, 1.00 * height, humanize(height), ha="center", va="bottom")
 
 
-def generate_plot(size, results, plot_width, plot_height, plot_dpi,
-                  output_file):
+def generate_plot(size, results, plot_width, plot_height, plot_dpi, output_file):
     # Font size.
     plt.rc("font", size=10)
     plt.rc("axes", titlesize=24)
@@ -82,8 +77,7 @@ def generate_plot(size, results, plot_width, plot_height, plot_dpi,
     ind = numpy.arange(len(groups))
     width = 0.10
     fig, ax = plt.subplots()
-    fig.set_size_inches(plot_width / plot_dpi,
-                        plot_height / plot_dpi)
+    fig.set_size_inches(plot_width / plot_dpi, plot_height / plot_dpi)
     ax.set_xlabel("Concurrent threads")
     ax.set_ylabel("Throughput (call/s)")
     ax.set_facecolor("#dcdcdc")
@@ -138,10 +132,8 @@ def main():
     sizes = sorted(results.keys(), key=dehumanize)
     for prefix, size in enumerate(sizes):
         result = results[size]
-        output_file = os.path.join(args.output,
-                                   "{}_{}.png".format(prefix, size))
-        generate_plot(size, result, args.plot_width, args.plot_height,
-                      args.plot_dpi, output_file)
+        output_file = os.path.join(args.output, "{}_{}.png".format(prefix, size))
+        generate_plot(size, result, args.plot_width, args.plot_height, args.plot_dpi, output_file)
 
 
 if __name__ == "__main__":

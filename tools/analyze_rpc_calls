@@ -1,30 +1,35 @@
 #!/usr/bin/env python3
 import argparse
 import collections
-import dpkt
 import json
 import operator
 import os
 import re
 import socket
-import subprocess
 import struct
+import subprocess
 import sys
+
+import dpkt
 import tabulate
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 PROJECT_DIR = os.path.normpath(os.path.join(SCRIPT_DIR, ".."))
 
-TYPE_INFO_PATTERN = re.compile(r"""
+TYPE_INFO_PATTERN = re.compile(
+    r"""
  const\s+utils::TypeInfo\s+
  (\S+)\s*                     # <class-name>::kType
  {\s*
  (\S+)ULL\s*,\s*              # <id-hex>
  "(\S+)"\s*                   # "<class-name>"
  }
- """, re.VERBOSE)
+ """,
+    re.VERBOSE,
+)
 
 # helpers
+
 
 def format_endpoint(addr, port):
     return "{}:{}".format(socket.inet_ntoa(addr), port)
@@ -42,8 +47,7 @@ def parse_source_file(fname):
 
 def parse_all_source_files(dirname):
     ids = {}
-    ret = subprocess.run(["find", dirname, "-name", "*.lcp.cpp"],
-                         stdout=subprocess.PIPE)
+    ret = subprocess.run(["find", dirname, "-name", "*.lcp.cpp"], stdout=subprocess.PIPE)
     ret.check_returncode()
     headers = list(filter(None, ret.stdout.decode("utf-8").split("\n")))
     for header in headers:
@@ -66,8 +70,7 @@ class Connection:
         self._ts = []
 
         self._last = None
-        self._stats = collections.defaultdict(lambda: {"duration": [],
-                                                       "size": []})
+        self._stats = collections.defaultdict(lambda: {"duration": [], "size": []})
         self._requests = []
 
     def _extract_message(self):
@@ -76,14 +79,13 @@ class Connection:
         msg_len = struct.unpack_from(self.SIZE_FORMAT, self._data)[0]
         if len(self._data) < self.SIZE_LEN + msg_len:
             return False
-        self._message = self._data[self.SIZE_LEN:]
+        self._message = self._data[self.SIZE_LEN :]
         self._previous = self._data
         self._data = bytes()
         return True
 
     def add_data(self, data, direction, ts):
-        if self._previous[-len(data):] == data \
-                or self._data[-len(data):] == data:
+        if self._previous[-len(data) :] == data or self._data[-len(data) :] == data:
             print("Retransmission detected!", file=sys.stderr)
             return
 
@@ -97,15 +99,13 @@ class Connection:
         for i in range(2, 6):
             if len(self._message) < (i + 1) * 8:
                 continue
-            message_id = struct.unpack("<Q",
-                                       self._message[i * 8:(i + 1) * 8])[0]
+            message_id = struct.unpack("<Q", self._message[i * 8 : (i + 1) * 8])[0]
             if message_id in MESSAGES:
                 found = True
                 break
 
         if not found:
-            print("Got a message that I can't identify as any known "
-                  "RPC request/response!", file=sys.stderr)
+            print("Got a message that I can't identify as any known " "RPC request/response!", file=sys.stderr)
             self._last = None
             self._ts = []
             return
@@ -113,11 +113,9 @@ class Connection:
         message_type = MESSAGES[message_id]
 
         if direction == "to":
-            self._requests.append((self._ts[-1], direction, message_type,
-                                   len(self._message)))
+            self._requests.append((self._ts[-1], direction, message_type, len(self._message)))
         else:
-            self._requests.append((self._ts[0], direction, message_type,
-                                   len(self._message)))
+            self._requests.append((self._ts[0], direction, message_type, len(self._message)))
 
         if self._last is None:
             self._last = (message_type, self._ts[0], len(self._message))
@@ -125,8 +123,7 @@ class Connection:
             req_type, req_ts, req_size = self._last
             duration = self._ts[-1] - req_ts
             self._stats[(req_type, message_type)]["duration"].append(duration)
-            self._stats[(req_type, message_type)]["size"].append(
-                    req_size + len(self._message))
+            self._stats[(req_type, message_type)]["size"].append(req_size + len(self._message))
             self._last = None
 
         self._ts = []
@@ -146,8 +143,7 @@ class Server:
         self._conns[addr].add_data(data, direction, ts)
 
     def print_stats(self, machine_names, title, sort_by):
-        stats = collections.defaultdict(lambda: collections.defaultdict(
-                lambda: {"duration": [], "size": []}))
+        stats = collections.defaultdict(lambda: collections.defaultdict(lambda: {"duration": [], "size": []}))
 
         for addr, conn in self._conns.items():
             ip, port = addr.split(":")
@@ -156,11 +152,20 @@ class Server:
                 stats[ip][rpc]["size"] += connstats["size"]
 
         table = []
-        headers = ["RPC ({})".format(title), "Client", "Count", "Tmin (ms)",
-                   "Tavg (ms)", "Tmax (ms)", "Ttot (s)", "Smin (B)",
-                   "Savg (B)", "Smax (B)", "Stot (kiB)"]
-        sort_keys = ["rpc", "client", "count", "tmin", "tavg", "tmax", "ttot",
-                     "smin", "savg", "smax", "stot"]
+        headers = [
+            "RPC ({})".format(title),
+            "Client",
+            "Count",
+            "Tmin (ms)",
+            "Tavg (ms)",
+            "Tmax (ms)",
+            "Ttot (s)",
+            "Smin (B)",
+            "Savg (B)",
+            "Smax (B)",
+            "Stot (kiB)",
+        ]
+        sort_keys = ["rpc", "client", "count", "tmin", "tavg", "tmax", "ttot", "smin", "savg", "smax", "stot"]
         for client in sorted(stats.keys()):
             rpcs = stats[client]
             for rpc, connstats in rpcs.items():
@@ -168,18 +173,25 @@ class Server:
                 sizes = connstats["size"]
                 durs_sum = sum(durs)
                 sizes_sum = sum(sizes)
-                table.append(["{} / {}".format(*rpc), machine_names[client],
-                              len(durs), min(durs) * 1000,
-                              durs_sum / len(durs) * 1000,
-                              max(durs) * 1000, durs_sum, min(sizes),
-                              int(sizes_sum / len(sizes)), max(sizes),
-                              sizes_sum / 1024])
+                table.append(
+                    [
+                        "{} / {}".format(*rpc),
+                        machine_names[client],
+                        len(durs),
+                        min(durs) * 1000,
+                        durs_sum / len(durs) * 1000,
+                        max(durs) * 1000,
+                        durs_sum,
+                        min(sizes),
+                        int(sizes_sum / len(sizes)),
+                        max(sizes),
+                        sizes_sum / 1024,
+                    ]
+                )
         for sort_field in sort_by.split(","):
             reverse = True if sort_field.endswith("-") else False
-            table.sort(key=operator.itemgetter(sort_keys.index(
-                    sort_field.rstrip("+-"))), reverse=reverse)
-        print(tabulate.tabulate(table, headers=headers, tablefmt="psql",
-                                floatfmt=".3f"))
+            table.sort(key=operator.itemgetter(sort_keys.index(sort_field.rstrip("+-"))), reverse=reverse)
+        print(tabulate.tabulate(table, headers=headers, tablefmt="psql", floatfmt=".3f"))
 
     def get_requests(self, server_name, machine_names):
         ret = []
@@ -196,16 +208,20 @@ class Server:
 
 # process logic
 
-parser = argparse.ArgumentParser(description="Generate RPC statistics from "
-                                 "network traffic capture.")
-parser.add_argument("--sort-by", default="tavg+,count-,client+",
-                    help="comma separated list of fields which should be used "
-                    "to sort the data; each field can be suffixed with + or - "
-                    "to indicate ascending or descending order; available "
-                    "fields: rpc, client, count, min, avg, max, total")
-parser.add_argument("--no-aggregate", action="store_true",
-                    help="don't aggregate the results, instead display the "
-                    "individual RPC calls as they occurred")
+parser = argparse.ArgumentParser(description="Generate RPC statistics from " "network traffic capture.")
+parser.add_argument(
+    "--sort-by",
+    default="tavg+,count-,client+",
+    help="comma separated list of fields which should be used "
+    "to sort the data; each field can be suffixed with + or - "
+    "to indicate ascending or descending order; available "
+    "fields: rpc, client, count, min, avg, max, total",
+)
+parser.add_argument(
+    "--no-aggregate",
+    action="store_true",
+    help="don't aggregate the results, instead display the " "individual RPC calls as they occurred",
+)
 parser.add_argument("capfile", help="network traffic capture file")
 parser.add_argument("conffile", help="cluster config file")
 args = parser.parse_args()
@@ -251,15 +267,11 @@ requests = []
 for server in sorted(servers.keys()):
     server_name = machine_names[server.split(":")[0]]
     if args.no_aggregate:
-        requests.extend(servers[server].get_requests(server_name,
-                                                     machine_names))
+        requests.extend(servers[server].get_requests(server_name, machine_names))
     else:
-        servers[server].print_stats(machine_names=machine_names,
-                                    title=server_name,
-                                    sort_by=args.sort_by)
+        servers[server].print_stats(machine_names=machine_names, title=server_name, sort_by=args.sort_by)
 
 if args.no_aggregate:
     requests.sort()
     headers = ["timestamp", "from", "to", "request", "size"]
-    print(tabulate.tabulate(requests, headers=headers, tablefmt="psql",
-                            floatfmt=".6f"))
+    print(tabulate.tabulate(requests, headers=headers, tablefmt="psql", floatfmt=".6f"))

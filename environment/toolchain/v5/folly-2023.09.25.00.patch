@@ -4,11 +4,11 @@ index e0e16df..471131e 100644
 +++ b/folly/CMakeLists.txt
 @@ -28,7 +28,7 @@ install(
  )
- 
+
  add_subdirectory(experimental/exception_tracer)
 -add_subdirectory(logging/example)
 +# add_subdirectory(logging/example)
- 
+
  if (PYTHON_EXTENSIONS)
    # Create tree of symbolic links in structure required for successful
 diff --git a/folly/Portability.h b/folly/Portability.h

@@ -1,4 +1,4 @@
-// Copyright 2024 Memgraph Ltd.
+// Copyright 2025 Memgraph Ltd.
 //
 // Use of this software is governed by the Business Source License
 // included in the file licenses/BSL.txt; by using this file, you agree to be bound by the terms of the Business Source
@@ -19,6 +19,7 @@
 #include "query/frontend/ast/ast.hpp"
 #include "query/interpret/frame.hpp"
 #include "query/serialization/property_value.hpp"
+#include "query/trigger_fact.hpp"
 #include "query/typed_value.hpp"
 #include "storage/v2/property_value.hpp"
 #include "utils/memory.hpp"
@@ -203,8 +204,13 @@ template <detail::ObjectAccessor TAccessor>
   std::vector<detail::CreatedObject<TAccessor>> created_objects_vec;
   created_objects_vec.reserve(registry.created_objects.size());
   std::transform(registry.created_objects.begin(), registry.created_objects.end(),
-                 std::back_inserter(created_objects_vec),
-                 [](const auto &gid_and_created_object) { return gid_and_created_object.second; });
+                 std::back_inserter(created_objects_vec), [](const auto &gid_and_created_object) {
+                   std::cout << "Registered vertex GID: " << gid_and_created_object.first.AsUint() << std::endl;
+                   return gid_and_created_object.second;
+                 });
+
+  std::cout << " Summarize(): created_objects_vec.size() = " << created_objects_vec.size() << std::endl;
+
   registry.created_objects.clear();
 
   return {std::move(created_objects_vec), std::move(registry.deleted_objects), std::move(set_object_properties),
@@ -438,6 +444,10 @@ bool TriggerContext::ShouldEventTrigger(const TriggerEventType event_type) const
 void TriggerContextCollector::UpdateLabelMap(const VertexAccessor vertex, const storage::LabelId label_id,
                                              const LabelChange change) {
   auto &registry = GetRegistry<VertexAccessor>();
+
+  if (registry.should_register_updated_objects) {
+    std::cout << "[DEBUG] Registered SET property on GID = " << vertex.Gid().AsUint() << std::endl;
+  }
   if (!registry.should_register_updated_objects || registry.created_objects.count(vertex.Gid())) {
     return;
   }
@@ -508,7 +518,8 @@ TriggerContextCollector::TriggerContextCollector(const std::unordered_set<Trigge
 }
 
 bool TriggerContextCollector::ShouldRegisterVertexLabelChange() const {
-  return vertex_registry_.should_register_updated_objects;
+  //  return vertex_registry_.should_register_updated_objects;
+  return should_register_vertex_label_changes;
 }
 
 void TriggerContextCollector::RegisterSetVertexLabel(const VertexAccessor &vertex, const storage::LabelId label_id) {
@@ -518,6 +529,28 @@ void TriggerContextCollector::RegisterSetVertexLabel(const VertexAccessor &verte
 void TriggerContextCollector::RegisterRemovedVertexLabel(const VertexAccessor &vertex,
                                                          const storage::LabelId label_id) {
   UpdateLabelMap(vertex, label_id, LabelChange::REMOVE);
+}
+
+void TriggerContext::Merge(const TriggerContext &other) {
+  // for each internal vector, append other's contents
+  created_vertices_.insert(created_vertices_.end(), other.created_vertices_.begin(), other.created_vertices_.end());
+  deleted_vertices_.insert(deleted_vertices_.end(), other.deleted_vertices_.begin(), other.deleted_vertices_.end());
+  created_edges_.insert(created_edges_.end(), other.created_edges_.begin(), other.created_edges_.end());
+  deleted_edges_.insert(deleted_edges_.end(), other.deleted_edges_.begin(), other.deleted_edges_.end());
+  // UPDATE events (property changes)
+  set_vertex_properties_.insert(set_vertex_properties_.end(), other.set_vertex_properties_.begin(),
+                                other.set_vertex_properties_.end());
+  removed_vertex_properties_.insert(removed_vertex_properties_.end(), other.removed_vertex_properties_.begin(),
+                                    other.removed_vertex_properties_.end());
+  set_edge_properties_.insert(set_edge_properties_.end(), other.set_edge_properties_.begin(),
+                              other.set_edge_properties_.end());
+  removed_edge_properties_.insert(removed_edge_properties_.end(), other.removed_edge_properties_.begin(),
+                                  other.removed_edge_properties_.end());
+
+  // UPDATE events (label changes)
+  set_vertex_labels_.insert(set_vertex_labels_.end(), other.set_vertex_labels_.begin(), other.set_vertex_labels_.end());
+  removed_vertex_labels_.insert(removed_vertex_labels_.end(), other.removed_vertex_labels_.begin(),
+                                other.removed_vertex_labels_.end());
 }
 
 int8_t TriggerContextCollector::LabelChangeToInt(LabelChange change) {
@@ -540,6 +573,30 @@ TriggerContext TriggerContextCollector::TransformToTriggerContext() && {
           std::move(set_edge_properties),   std::move(removed_edge_properties)};
 }
 
+TriggerContext TriggerContext::FilterByEventType(TriggerEventType type) const {
+  TriggerContext filtered;
+
+  if (type == TriggerEventType::ANY || type == TriggerEventType::CREATE || type == TriggerEventType::VERTEX_CREATE ||
+      type == TriggerEventType::EDGE_CREATE) {
+    filtered.created_vertices_ = this->created_vertices_;
+    filtered.created_edges_ = this->created_edges_;
+  }
+
+  if (type == TriggerEventType::ANY || type == TriggerEventType::DELETE || type == TriggerEventType::VERTEX_DELETE ||
+      type == TriggerEventType::EDGE_DELETE) {
+    filtered.deleted_vertices_ = this->deleted_vertices_;
+    filtered.deleted_edges_ = this->deleted_edges_;
+  }
+
+  if (type == TriggerEventType::ANY || type == TriggerEventType::UPDATE || type == TriggerEventType::VERTEX_UPDATE ||
+      type == TriggerEventType::EDGE_UPDATE) {
+    filtered.set_vertex_properties_ = this->set_vertex_properties_;
+    filtered.set_edge_properties_ = this->set_edge_properties_;
+  }
+
+  return filtered;
+}
+
 TriggerContextCollector::LabelChangesLists TriggerContextCollector::LabelMapToList(LabelChangesMap &&label_changes) {
   std::vector<detail::SetVertexLabel> set_vertex_labels;
   std::vector<detail::RemovedVertexLabel> removed_vertex_labels;
@@ -556,4 +613,22 @@ TriggerContextCollector::LabelChangesLists TriggerContextCollector::LabelMapToLi
 
   return {std::move(set_vertex_labels), std::move(removed_vertex_labels)};
 }
+
+std::unordered_set<TriggerFactSignature> TriggerContext::ExtractFactSignatures() const {
+  std::unordered_set<TriggerFactSignature> facts;
+
+  for (const auto &obj : created_vertices_) facts.emplace("CREATED_VERTEX", obj.object.Gid());
+  for (const auto &obj : created_edges_) facts.emplace("CREATED_EDGE", obj.object.Gid());
+  for (const auto &obj : deleted_vertices_) facts.emplace("DELETED_VERTEX", obj.object.Gid());
+  for (const auto &obj : deleted_edges_) facts.emplace("DELETED_EDGE", obj.object.Gid());
+  for (const auto &obj : set_vertex_properties_) facts.emplace("SET_VERTEX_PROP", obj.object.Gid());
+  for (const auto &obj : removed_vertex_properties_) facts.emplace("REMOVED_VERTEX_PROP", obj.object.Gid());
+  for (const auto &obj : set_edge_properties_) facts.emplace("SET_EDGE_PROP", obj.object.Gid());
+  for (const auto &obj : removed_edge_properties_) facts.emplace("REMOVED_EDGE_PROP", obj.object.Gid());
+  for (const auto &label : set_vertex_labels_) facts.emplace("SET_VERTEX_LABEL", label.object.Gid());
+  for (const auto &label : removed_vertex_labels_) facts.emplace("REMOVED_VERTEX_LABEL", label.object.Gid());
+
+  return facts;
+}
+
 }  // namespace memgraph::query

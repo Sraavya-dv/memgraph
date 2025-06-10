@@ -16,7 +16,6 @@ import mgp
 def check_stream_no_filtering(
     context: mgp.TransCtx, messages: mgp.Messages
 ) -> mgp.Record(query=str, parameters=mgp.Map):
-
     result_queries = []
 
     for i in range(0, messages.total_messages()):
@@ -33,7 +32,6 @@ def check_stream_no_filtering(
 def check_stream_with_filtering(
     context: mgp.TransCtx, messages: mgp.Messages
 ) -> mgp.Record(query=str, parameters=mgp.Map):
-
     result_queries = []
 
     for i in range(0, messages.total_messages()):

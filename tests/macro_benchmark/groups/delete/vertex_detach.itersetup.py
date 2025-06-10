@@ -9,7 +9,7 @@
 # by the Apache License, Version 2.0, included in the file
 # licenses/APL.txt.
 
-from setup import create_vertices, create_edges
+from setup import create_edges, create_vertices
 
 create_vertices(500)
 create_edges(10000, 500)

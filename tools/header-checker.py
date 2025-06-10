@@ -84,7 +84,6 @@ def main():
 
     has_header = is_header_correct(content, bls_header_complete) or is_header_correct(content, mel_header_complete)
     if not has_header:
-
         if args.amend_year:
             replaced_content = re.sub(r"Copyright [0-9]{4}", f"Copyright {year}", content, 1)
             is_header_corrected = is_header_correct(replaced_content, bls_header_complete) or is_header_correct(

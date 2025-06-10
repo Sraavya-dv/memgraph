@@ -10,6 +10,7 @@
 # licenses/APL.txt.
 
 import random
+
 import common
 
 random.seed(0)

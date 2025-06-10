@@ -10,6 +10,7 @@
 # licenses/APL.txt.
 
 import random
+
 import common
 
 random.seed(0)
@@ -32,4 +33,3 @@ for i in range(common.VERTEX_COUNT * common.VERTEX_COUNT // common.SPARSE_FACTOR
     a = int(random.random() * common.VERTEX_COUNT)
     b = int(random.random() * common.VERTEX_COUNT)
     print("MATCH (a: Node {id: %d}), (b: Node {id: %d}) CREATE (a)-[:Friend]->(b);" % (a, b))
-

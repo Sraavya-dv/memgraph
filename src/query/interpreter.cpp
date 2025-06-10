@@ -31,7 +31,9 @@
 #include <utility>
 #include <variant>
 #include <vector>
+#include "utils/variant_helpers.hpp"
 
+#include <iostream>
 #include "auth/auth.hpp"
 #include "coordination/constants.hpp"
 #include "coordination/coordinator_ops_status.hpp"
@@ -76,6 +78,7 @@
 #include "query/stream/sources.hpp"
 #include "query/time_to_live/time_to_live.hpp"
 #include "query/trigger.hpp"
+#include "query/trigger_fact.hpp"
 #include "query/typed_value.hpp"
 #include "replication/config.hpp"
 #include "replication/state.hpp"
@@ -6573,8 +6576,11 @@ void RunTriggersAfterCommit(dbms::DatabaseAccess db_acc, InterpreterContext *int
     auto trigger_context = original_trigger_context;
     trigger_context.AdaptForAccessor(&db_accessor);
     try {
+      TriggerContextCollector collector({TriggerEventType::CREATE, TriggerEventType::DELETE, TriggerEventType::UPDATE});
+
       trigger.Execute(&db_accessor, db_acc, execution_memory.resource(), flags::run_time::GetExecutionTimeout(),
-                      &interpreter_context->is_shutting_down, /* transaction_status = */ nullptr, trigger_context);
+                      &interpreter_context->is_shutting_down, /* transaction_status = */ nullptr, trigger_context,
+                      &collector);
     } catch (const utils::BasicException &exception) {
       spdlog::warn("Trigger '{}' failed with exception:\n{}", trigger.Name(), exception.what());
       db_accessor.Abort();
@@ -6748,22 +6754,215 @@ void Interpreter::Commit() {
   }
 
   if (trigger_context) {
-    // Run the triggers
-    for (const auto &trigger : db->trigger_store()->BeforeCommitTriggers().access()) {
+    //    // Run the triggers
+    //  for (const auto &trigger : db->trigger_store()->BeforeCommitTriggers().access()) {
+    //     QueryAllocator execution_memory{};
+    //     AdvanceCommand();
+    //     try {
+    //       trigger.Execute(&*current_db_.execution_db_accessor_, current_db_.db_acc_, execution_memory.resource(),
+    //                        flags::run_time::GetExecutionTimeout(), &interpreter_context_->is_shutting_down,
+    //                        &transaction_status_, *trigger_context);
+    //      } catch (const utils::BasicException &e) {
+    //        throw utils::BasicException(
+    //            fmt::format("Trigger '{}' caused the transaction to fail.\nException: {}", trigger.Name(), e.what()));
+    //      }
+    //    }
+    //    SPDLOG_DEBUG("Finished executing before commit triggers");
+    //  }
+
+    auto trigger_store_accessor = db->trigger_store()->BeforeCommitTriggers().access();
+    auto it = trigger_store_accessor.begin();
+
+    TriggerContextCollector collector({TriggerEventType::CREATE, TriggerEventType::DELETE, TriggerEventType::UPDATE});
+    collector.EnableUpdatedPropertiesTracking();
+    collector.GetRegistry<VertexAccessor>().should_register_updated_objects = true;
+    collector.GetRegistry<EdgeAccessor>().should_register_updated_objects = true;
+    collector.EnableVertexLabelChangeTracking();
+
+    std::cout << "DEBUG: should_register_updated_objects_first wave = "
+              << collector.GetRegistry<VertexAccessor>().should_register_updated_objects << std::endl;
+
+    while (it != trigger_store_accessor.end()) {
+      const auto &trigger = *it;
       QueryAllocator execution_memory{};
       AdvanceCommand();
+
       try {
         trigger.Execute(&*current_db_.execution_db_accessor_, current_db_.db_acc_, execution_memory.resource(),
                         flags::run_time::GetExecutionTimeout(), &interpreter_context_->is_shutting_down,
-                        &transaction_status_, *trigger_context);
+                        &transaction_status_, *trigger_context, &collector);
+
       } catch (const utils::BasicException &e) {
         throw utils::BasicException(
             fmt::format("Trigger '{}' caused the transaction to fail.\nException: {}", trigger.Name(), e.what()));
       }
+      ++it;
     }
+
+    SPDLOG_DEBUG("Finished executing before commit triggers");
+
+    TriggerContext current_context = std::move(collector).TransformToTriggerContext();
+
+    size_t updated_count =
+        current_context.GetSetVertexProperties().size() + current_context.GetRemovedVertexProperties().size() +
+        current_context.GetSetVertexLabels().size() + current_context.GetRemovedVertexLabels().size();
+
+    std::cout << "Updated vertices (first wave): " << updated_count << std::endl;
+
+    /*std::cout << "----- Trigger context collected after first wave -----" << std::endl;
+
+    for (const auto &created : current_context.GetCreatedVertices()) {
+      auto gid = created.object.Gid().AsUint();
+      std::cout << "Vertex created: GID " << gid << std::endl;
+    }
+
+    for (const auto &deleted : current_context.GetDeletedVertices()) {
+      std::cout << "Vertex deleted: " << deleted.object.Gid().AsUint() << std::endl;
+    }
+    for (const auto &created : current_context.GetCreatedEdges()) {
+      std::cout << "Edge created: " << created.object.Gid().AsUint() << std::endl;
+    }
+    for (const auto &deleted : current_context.GetDeletedEdges()) {
+      std::cout << "Edge deleted: " << deleted.object.Gid().AsUint() << std::endl;
+     } */
+
+    std::cout << "Modified Properties and Labels in Context:" << std::endl;
+    auto dba = &*current_db_.execution_db_accessor_;
+
+    for (const auto &prop : current_context.GetSetVertexProperties()) {
+      std::cout << "  SET SET SET SET  property: GID " << prop.object.Gid().AsUint()
+                << ", key = " << dba->PropertyToName(prop.key) << ", property changed (value types logged)"
+                << std::endl;
+    }
+    /*
+    for (const auto &prop : current_context.GetRemovedVertexProperties()) {
+      std::cout << "  REMOVED property: GID " << prop.object.Gid().AsUint()
+                << ", property removed (value type logged)" << std::endl;
+
+    }
+
+    for (const auto &label : current_context.GetSetVertexLabels()) {
+      std::cout << "  SET label: GID " << label.object.Gid().AsUint()
+                << ", label ID = " << label.label_id.AsUint() << std::endl;
+    }
+
+    for (const auto &label : current_context.GetRemovedVertexLabels()) {
+      std::cout << "  REMOVED label: GID " << label.object.Gid().AsUint()
+                << ", label ID = " << label.label_id.AsUint() << std::endl;
+    }*/
+
+    //  Second pass trigger match and execution
+    int depth = 0;
+    constexpr int kMaxDepth = 10;
+
+    std::deque<std::pair<const Trigger *, std::unordered_set<TriggerFactSignature>>> trigger_queue;
+    // std::unordered_set<std::string> seen;
+
+    // Initially push triggers matching the new context
+    for (const auto &trigger : trigger_store_accessor) {
+      if (current_context.ShouldEventTrigger(trigger.EventType())) {
+        trigger_queue.emplace_back(&trigger, current_context.ExtractFactSignatures());
+      }
+    }
+
+    while (!trigger_queue.empty() && depth < kMaxDepth) {
+      std::unordered_set<std::string> seen_this_pass;
+
+      std::cout << "---- Recursion Pass [" << depth + 1 << "] ----" << std::endl;
+      std::cout << "Queue size: " << trigger_queue.size() << std::endl;
+
+      std::cout << "Triggers in queue: ";
+      for (const auto &[t, _] : trigger_queue) {
+        std::cout << t->Name() << " ";
+      }
+      std::cout << std::endl;
+
+      const auto &trigger_pair = trigger_queue.front();
+      const Trigger *trigger = trigger_pair.first;
+      const std::unordered_set<TriggerFactSignature> &previous_facts = trigger_pair.second;
+      trigger_queue.pop_front();
+
+      auto filtered_context = current_context.FilterByEventType(trigger->EventType());
+
+      if (!seen_this_pass.insert(trigger->Name()).second) continue;
+
+      std::cout << " Recursion Pass [" << depth + 1 << "]: Firing " << trigger->Name() << std::endl;
+
+      QueryAllocator exec_mem{};
+      AdvanceCommand();
+
+      TriggerContextCollector collector({TriggerEventType::CREATE, TriggerEventType::DELETE, TriggerEventType::UPDATE});
+
+      collector.EnableUpdatedPropertiesTracking();
+
+      collector.GetRegistry<VertexAccessor>().should_register_updated_objects = true;
+      collector.GetRegistry<EdgeAccessor>().should_register_updated_objects = true;
+      collector.EnableVertexLabelChangeTracking();  // if needed for labels
+      std::cout << "DEBUG: should_register_updated_objects_consecutive_waves = "
+                << collector.GetRegistry<VertexAccessor>().should_register_updated_objects << std::endl;
+
+      try {
+        trigger->Execute(&*current_db_.execution_db_accessor_, current_db_.db_acc_, exec_mem.resource(),
+                         flags::run_time::GetExecutionTimeout(), &interpreter_context_->is_shutting_down,
+                         &transaction_status_, filtered_context, &collector);
+
+        std::cout << "Executing trigger: " << trigger->Name() << std::endl;
+
+        // TriggerContext next_context = std::move(collector).TransformToTriggerContext();
+        // previous_context = std::move(next_context);
+
+      } catch (const utils::BasicException &e) {
+        throw utils::BasicException(
+            fmt::format("Recursive Trigger '{}' failed.\nException: {}", trigger->Name(), e.what()));
+      }
+
+      //      auto next_context = std::move(collector).TransformToTriggerContext();
+      //     current_context = std::move(next_context);
+
+      TriggerContext next_context = std::move(collector).TransformToTriggerContext();
+
+      auto new_facts = next_context.ExtractFactSignatures();
+      bool has_new_fact = false;
+
+      for (const auto &fact : new_facts) {
+        if (previous_facts.find(fact) == previous_facts.end()) {
+          has_new_fact = true;
+          break;
+        }
+      }
+
+      if (!has_new_fact) {
+        std::cout << "[Trigger] Skipping requeue of " << trigger->Name() << " due to no new facts." << std::endl;
+        continue;
+      }
+
+      current_context.Merge(next_context);
+      std::unordered_set<TriggerFactSignature> merged_facts = previous_facts;
+      merged_facts.insert(new_facts.begin(), new_facts.end());
+
+      // current_context.Merge(next_context);
+
+      /*  std::cout << "Collected context:" << std::endl;
+        for (const auto &created : next_context.GetCreatedVertices()) {
+          std::cout << "Created Vertex: GID " << created.object.Gid().AsUint() << std::endl;
+        }
+        for (const auto &created : next_context.GetCreatedEdges()) {
+          std::cout << "Created Edge: GID " << created.object.Gid().AsUint() << std::endl;
+        }*/
+
+      for (const auto &t : trigger_store_accessor) {
+        if (!seen_this_pass.contains(t.Name()) && current_context.ShouldEventTrigger(t.EventType())) {
+          std::cout << "→ Adding trigger to queue: " << t.Name() << std::endl;
+          trigger_queue.emplace_back(&t, merged_facts);
+        }
+      }
+
+      //  new_context = std::move(next_context);
+      depth++;
+    }
+
     SPDLOG_DEBUG("Finished executing before commit triggers");
   }
-
   const auto reset_necessary_members = [this]() {
     for (auto &qe : query_executions_) {
       if (qe) qe->CleanRuntimeData();

@@ -54,7 +54,7 @@ def test_create_dynamic_node_param(memgraph):
 
     assert len(result) == 1
     assert result[0]["label"] == "TYPE"
-    
+
 
 def test_create_multiple_dynamic_labels_on_node_param(memgraph):
     memgraph.execute("CREATE (:$name);", {"name": ["Foo", "Bar"]})

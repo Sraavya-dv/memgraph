@@ -122,4 +122,3 @@ jobs:
       toolchain: 'v6'
       run_build: ${{ needs.DiffSetup.outputs.run_malloc_build }}
     secrets: inherit
-  

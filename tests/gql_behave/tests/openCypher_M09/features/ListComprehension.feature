@@ -72,4 +72,3 @@ Feature: ListComprehension
       | b    |
       | (:C) |
     And no side effects
-

@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-'''
+"""
 A script for transfering all data from a Neo4j database
 into a Memgraph database.
-'''
+"""
 
-import logging
 import json
+import logging
 import os
-from time import time
-from datetime import datetime
 from argparse import ArgumentParser
+from datetime import datetime
+from time import time
 
 from neo4j.v1 import GraphDatabase, basic_auth
 
@@ -24,20 +24,15 @@ TEMP_LABEL = "__memgraph_temp_label_1414213562"
 
 def parse_args():
     argp = ArgumentParser(description=__doc__)
-    argp.add_argument("--neo-url", default = "127.0.0.1:7687",
-                      help = "Neo4j url, default 127.0.0.1:7687.")
-    argp.add_argument("--neo-user", default = "neo4j",
-                      help = "Neo4j username, default neo4j.")
-    argp.add_argument("--neo-password", default = "1234",
-                      help = "Neo4j password, default 1234.")
-    argp.add_argument("--neo-ssl", default = False, choices = [True, False],
-                      help = "Encryption for neo4j auth data, default False")
-    argp.add_argument("--memgraph-url", default = "127.0.0.1:7688",
-                      help = "Memgraph url, default 127.0.0.1:7688.")
-    argp.add_argument("--logging", default = "DEBUG", choices = ["INFO", "DEBUG"],
-                      help = "Logging level, default debug.") 
-    argp.add_argument("--json-storage", default = "json",
-                      help = "Storage for JSON files.")
+    argp.add_argument("--neo-url", default="127.0.0.1:7687", help="Neo4j url, default 127.0.0.1:7687.")
+    argp.add_argument("--neo-user", default="neo4j", help="Neo4j username, default neo4j.")
+    argp.add_argument("--neo-password", default="1234", help="Neo4j password, default 1234.")
+    argp.add_argument(
+        "--neo-ssl", default=False, choices=[True, False], help="Encryption for neo4j auth data, default False"
+    )
+    argp.add_argument("--memgraph-url", default="127.0.0.1:7688", help="Memgraph url, default 127.0.0.1:7688.")
+    argp.add_argument("--logging", default="DEBUG", choices=["INFO", "DEBUG"], help="Logging level, default debug.")
+    argp.add_argument("--json-storage", default="json", help="Storage for JSON files.")
     return argp.parse_args()
 
 
@@ -50,8 +45,7 @@ def create_vertex_cypher(vertex):
     if vertex.labels:
         labels += ":" + ":".join(vertex.labels)
     vertex.properties[TEMP_ID] = vertex.id
-    properties = ", ".join('%s: %r' % kv for kv
-                           in vertex.properties.items())
+    properties = ", ".join("%s: %r" % kv for kv in vertex.properties.items())
     return "CREATE (%s {%s})" % (labels, properties)
 
 
@@ -60,12 +54,12 @@ def create_edge_cypher(edge, edge_num):
     Helper function that generates a cypher query for creting
     a edge based on the given Bolt edge.
     """
-    properties = ", ".join('%s: %r' % kv for kv
-                           in edge.properties.items())
-    return ["(from%s {%s: %r}), (to%s {%s: %r})" \
-                % (edge_num, TEMP_ID, edge.start, edge_num, TEMP_ID, edge.end),
-            "CREATE (from%s)-[:%s {%s}]->(to%s)" \
-                % (edge_num, edge.type, properties, edge_num)]
+    properties = ", ".join("%s: %r" % kv for kv in edge.properties.items())
+    return [
+        "(from%s {%s: %r}), (to%s {%s: %r})" % (edge_num, TEMP_ID, edge.start, edge_num, TEMP_ID, edge.end),
+        "CREATE (from%s)-[:%s {%s}]->(to%s)" % (edge_num, edge.type, properties, edge_num),
+    ]
+
 
 def vertex_to_dict(vertex):
     """
@@ -76,6 +70,7 @@ def vertex_to_dict(vertex):
     """
     return {"labels": list(vertex.labels), "properties": vertex.properties}
 
+
 def edge_to_dict(edge):
     """
     Returns dictionary which represents one edge with type, start vertex,
@@ -83,8 +78,8 @@ def edge_to_dict(edge):
 
     :param edge: Graph edge
     """
-    return {"type": edge.type, "properties": edge.properties, \
-            "start": edge.start, "end": edge.end}
+    return {"type": edge.type, "properties": edge.properties, "start": edge.start, "end": edge.end}
+
 
 def create_json_file(storage, timestamp, element, batch_index, content):
     """
@@ -99,16 +94,15 @@ def create_json_file(storage, timestamp, element, batch_index, content):
     :param batch_index: int, index of the current batch, used in file name
     :param content: list, contet which will be dumped in file
     """
-    json_file = os.path.join(storage, timestamp, element,
-                        str(batch_index) + ".json")
-    os.makedirs(os.path.dirname(json_file), exist_ok = True)
+    json_file = os.path.join(storage, timestamp, element, str(batch_index) + ".json")
+    os.makedirs(os.path.dirname(json_file), exist_ok=True)
     print(content)
-    with open(json_file, 'w') as f:
-        json.dump(content, f, indent = 2)
+    with open(json_file, "w") as f:
+        json.dump(content, f, indent=2)
 
 
 def transfer(storage, neo_driver, memgraph_driver):
-    """ Copies all the data from Neo4j to Memgraph. """
+    """Copies all the data from Neo4j to Memgraph."""
 
     # TODO add error handling
     neo_session = neo_driver.session()
@@ -154,10 +148,9 @@ def transfer(storage, neo_driver, memgraph_driver):
             edge_queries = create_edge_cypher(edge, edge_num)
             edge_num += 1
             if cypher_query:
-                cypher_query = edge_queries[0] + ", " + cypher_query + \
-                        " " + edge_queries[1]
+                cypher_query = edge_queries[0] + ", " + cypher_query + " " + edge_queries[1]
             else:
-                cypher_query = ' '.join(edge_queries)
+                cypher_query = " ".join(edge_queries)
         create_json_file(storage, timestamp, "edges", batch_count, edges_list)
         cypher_query = "MATCH " + cypher_query
         log.debug("Edge create on cypher: %s" % (cypher_query))
@@ -170,10 +163,11 @@ def transfer(storage, neo_driver, memgraph_driver):
     vertices_batch = []
     while True:
         read_vertices_in_batch = 0
-        vertices = neo_session.run("MATCH(n) WHERE n.%s>=%s RETURN n " \
-                      "ORDER BY ID(n) LIMIT %s" % (TEMP_ID, start_id, read_vertex_batch))
+        vertices = neo_session.run(
+            "MATCH(n) WHERE n.%s>=%s RETURN n " "ORDER BY ID(n) LIMIT %s" % (TEMP_ID, start_id, read_vertex_batch)
+        )
         for vertex in vertices:
-            vertex = vertex['n']
+            vertex = vertex["n"]
             vertices_batch.append(vertex)
             if len(vertices_batch) >= write_vertex_batch:
                 write_vertices(vertices_batch)
@@ -186,18 +180,20 @@ def transfer(storage, neo_driver, memgraph_driver):
     if len(vertices_batch) > 0:
         write_vertices(vertices_batch)
 
-    max_id = neo_session.run("MATCH(n) RETURN MAX(ID(n)) AS id").peek()['id']
+    max_id = neo_session.run("MATCH(n) RETURN MAX(ID(n)) AS id").peek()["id"]
 
     start_id = 0
     batch_count = 0
     edges_batch = []
     while start_id <= max_id:
-        edges = neo_session.run("MATCH (n)-[r]->() WHERE n.%s>=%s AND " \
-              "n.%s<%s RETURN r" % (TEMP_ID, start_id, TEMP_ID, start_id + read_edge_batch))
+        edges = neo_session.run(
+            "MATCH (n)-[r]->() WHERE n.%s>=%s AND "
+            "n.%s<%s RETURN r" % (TEMP_ID, start_id, TEMP_ID, start_id + read_edge_batch)
+        )
         start_id = start_id + read_edge_batch
         for edge in edges:
             edge_count += 1
-            edge = edge['r']
+            edge = edge["r"]
             edges_batch.append(edge)
             if len(edges_batch) >= write_edge_batch:
                 write_edges(edges_batch)
@@ -221,13 +217,9 @@ def main():
     log.info("Memgraph from Neo4j data import tool")
 
     neo_driver = GraphDatabase.driver(
-        "bolt://" + args.neo_url,
-        auth=basic_auth(args.neo_user, args.neo_password),
-        encrypted=args.neo_ssl)
-    memgraph_driver = GraphDatabase.driver(
-        "bolt://" + args.memgraph_url,
-        auth=basic_auth("", ""),
-        encrypted=False)
+        "bolt://" + args.neo_url, auth=basic_auth(args.neo_user, args.neo_password), encrypted=args.neo_ssl
+    )
+    memgraph_driver = GraphDatabase.driver("bolt://" + args.memgraph_url, auth=basic_auth("", ""), encrypted=False)
 
     start_time = time()
     transfer(args.json_storage, neo_driver, memgraph_driver)
@@ -235,5 +227,6 @@ def main():
 
     pass
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     main()

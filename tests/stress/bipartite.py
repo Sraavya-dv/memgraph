@@ -22,13 +22,13 @@ import multiprocessing
 import time
 
 from common import (
-    OutputData,
-    SessionCache,
-    assert_equal,
-    batch,
-    connection_argument_parser,
-    execute_till_success,
-    render,
+  OutputData,
+  SessionCache,
+  assert_equal,
+  batch,
+  connection_argument_parser,
+  execute_till_success,
+  render,
 )
 
 

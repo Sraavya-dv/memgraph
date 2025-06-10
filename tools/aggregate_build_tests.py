@@ -1,7 +1,7 @@
-import subprocess
 import json
-from typing import List
 import os
+import subprocess
+from typing import List
 from urllib.parse import quote
 
 
@@ -20,13 +20,9 @@ def list_build_files(date: int) -> List[str]:
         list of package s3 keys for this date
     """
     p = subprocess.run(
-        [
-            "aws", "s3", "ls",
-            f"s3://deps.memgraph.io/daily-build/memgraph/{date}/",
-            "--recursive"
-        ],
+        ["aws", "s3", "ls", f"s3://deps.memgraph.io/daily-build/memgraph/{date}/", "--recursive"],
         capture_output=True,
-        text=True
+        text=True,
     )
 
     # extract the file keys found
@@ -61,10 +57,7 @@ def build_package_json(files: List[str], return_url: bool = True) -> dict:
     out = {}
     for file in files:
         if return_url:
-            url = quote(
-                f"https://s3.eu-west-1.amazonaws.com/deps.memgraph.io/{file}",
-                safe=":/"
-            )
+            url = quote(f"https://s3.eu-west-1.amazonaws.com/deps.memgraph.io/{file}", safe=":/")
         else:
             url = file
 
@@ -79,14 +72,7 @@ def build_package_json(files: List[str], return_url: bool = True) -> dict:
         if "malloc" in file:
             arch = f"{arch}-malloc"
 
-        os = file.split("/")[3].replace(
-            "-malloc", ""
-        ).replace(
-            "-aarch64", ""
-        ).replace(
-            "-relwithdebinfo",
-            ""
-        )
+        os = file.split("/")[3].replace("-malloc", "").replace("-aarch64", "").replace("-relwithdebinfo", "")
 
         if os not in out:
             out[os] = {}
@@ -159,12 +145,8 @@ def main() -> None:
         "client_payload": {
             "table": "memgraph",
             "limit": 42,
-            "build_data": {
-                "date": date,
-                "tests": tests,
-                "packages": packages
-            }
-        }
+            "build_data": {"date": date, "tests": tests, "packages": packages},
+        },
     }
     payload = json.dumps(payload)
     print(payload)

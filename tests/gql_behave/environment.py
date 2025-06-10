@@ -14,11 +14,12 @@
 import json
 import logging
 import sys
-from steps.test_parameters import TestParameters
-from neo4j import GraphDatabase, basic_auth
 
+from neo4j import GraphDatabase, basic_auth
+from steps.test_parameters import TestParameters
 
 # Helper class and functions
+
 
 class TestResults:
     def __init__(self):
@@ -39,18 +40,16 @@ class TestResults:
 
 # Behave specific functions
 
+
 def before_all(context):
     # logging
     logging.basicConfig(level="DEBUG")
     context.log = logging.getLogger(__name__)
 
     # driver
-    uri = "bolt://{}:{}".format(context.config.db_host,
-                                context.config.db_port)
-    auth_token = basic_auth(
-        context.config.db_user, context.config.db_pass)
-    context.driver = GraphDatabase.driver(uri, auth=auth_token,
-                                          encrypted=False)
+    uri = "bolt://{}:{}".format(context.config.db_host, context.config.db_port)
+    auth_token = basic_auth(context.config.db_user, context.config.db_pass)
+    context.driver = GraphDatabase.driver(uri, auth=auth_token, encrypted=False)
 
     # test results
     context.test_results = TestResults()
@@ -63,8 +62,7 @@ def before_scenario(context, scenario):
 
 def after_scenario(context, scenario):
     context.test_results.add_test(scenario.status)
-    if context.config.single_scenario or \
-            (context.config.single_fail and scenario.status == "failed"):
+    if context.config.single_scenario or (context.config.single_fail and scenario.status == "failed"):
         print("Press enter to continue")
         sys.stdin.readline()
 
@@ -87,5 +85,5 @@ def after_all(context):
         "test_suite": context.config.test_suite,
     }
 
-    with open(context.config.stats_file, 'w') as f:
+    with open(context.config.stats_file, "w") as f:
         json.dump(js, f)

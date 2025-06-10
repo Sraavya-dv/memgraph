@@ -28,11 +28,11 @@ from functools import wraps
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from common import (
-    OutputData,
-    SessionCache,
-    connection_argument_parser,
-    execute_till_success,
-    try_execute,
+  OutputData,
+  SessionCache,
+  connection_argument_parser,
+  execute_till_success,
+  try_execute,
 )
 
 log = logging.getLogger(__name__)

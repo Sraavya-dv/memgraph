@@ -13,13 +13,13 @@ memgraph:
     # Specifies the path to the deployment script
     # Deployment script needs to setup and cleanup the Memgraph ecosystem it is run on.
     # Script needs to have methods for start, stop and status, since continuous integration
-    # calls the script with these arguments. Optionally, the script can have an additional 
+    # calls the script with these arguments. Optionally, the script can have an additional
     # argument to pass memgraph flags to the cluster, which will override the existing cluster
-    # flags. Stopping of the cluster needs to guarantee the cleanup of the resources so that 
+    # flags. Stopping of the cluster needs to guarantee the cleanup of the resources so that
     # no files or directories are left behind. Check binary_standalone.sh for more info.
     script: <path to script>
   args:
-    # Additional memgraph arguments that are passed. Overrides the arguments from the 
+    # Additional memgraph arguments that are passed. Overrides the arguments from the
     # deployment script.
     - "--telemetry-enabled=false"  # Disables telemetry.
     - "--bolt-server-name-for-init=Neo4j/"  # Specifies the Bolt server name.

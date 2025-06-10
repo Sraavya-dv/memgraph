@@ -1,4 +1,4 @@
-// Copyright 2024 Memgraph Ltd.
+// Copyright 2025 Memgraph Ltd.
 //
 // Use of this software is governed by the Business Source License
 // included in the file licenses/BSL.txt; by using this file, you agree to be bound by the terms of the Business Source
@@ -20,11 +20,16 @@
 #include <utility>
 #include <vector>
 
+#include "query/trigger_fact.hpp"
 #include "query/typed_value.hpp"
 #include "storage/v2/property_value.hpp"
 #include "storage/v2/view.hpp"
 #include "utils/concepts.hpp"
 #include "utils/fnv.hpp"
+
+#include <string>
+#include <unordered_set>
+//#include "storage/v2/gid.hpp"
 
 namespace memgraph::query {
 namespace detail {
@@ -164,6 +169,23 @@ const char *TriggerEventTypeToString(TriggerEventType event_type);
 // Holds the information necessary for triggers
 class TriggerContext {
  public:
+  const auto &GetCreatedVertices() const { return created_vertices_; }
+  const auto &GetDeletedVertices() const { return deleted_vertices_; }
+  const auto &GetSetVertexProperties() const { return set_vertex_properties_; }
+  const auto &GetRemovedVertexProperties() const { return removed_vertex_properties_; }
+  const auto &GetSetVertexLabels() const { return set_vertex_labels_; }
+  const auto &GetRemovedVertexLabels() const { return removed_vertex_labels_; }
+
+  const auto &GetCreatedEdges() const { return created_edges_; }
+  const auto &GetDeletedEdges() const { return deleted_edges_; }
+  const auto &GetSetEdgeProperties() const { return set_edge_properties_; }
+  const auto &GetRemovedEdgeProperties() const { return removed_edge_properties_; }
+  TriggerContext FilterByEventType(TriggerEventType type) const;
+
+  std::unordered_set<TriggerFactSignature> ExtractFactSignatures() const;
+
+  void Merge(const TriggerContext &other);
+
   TriggerContext() = default;
   TriggerContext(std::vector<detail::CreatedObject<VertexAccessor>> created_vertices,
                  std::vector<detail::DeletedObject<VertexAccessor>> deleted_vertices,
@@ -252,6 +274,7 @@ class TriggerContextCollector {
   TriggerContextCollector &operator=(const TriggerContextCollector &) = default;
   TriggerContextCollector &operator=(TriggerContextCollector &&) = default;
   ~TriggerContextCollector() = default;
+  //  TriggerContext FilterByEventType(TriggerEventType type) const;
 
   template <detail::ObjectAccessor TAccessor>
   bool ShouldRegisterCreatedObject() const {
@@ -318,10 +341,26 @@ class TriggerContextCollector {
     RegisterSetObjectProperty(object, key, std::move(old_value), TypedValue());
   }
 
-  bool ShouldRegisterVertexLabelChange() const;
+  void EnableVertexLabelChangeTracking() { should_register_vertex_label_changes = true; }
+
   void RegisterSetVertexLabel(const VertexAccessor &vertex, storage::LabelId label_id);
   void RegisterRemovedVertexLabel(const VertexAccessor &vertex, storage::LabelId label_id);
   [[nodiscard]] TriggerContext TransformToTriggerContext() &&;
+
+  template <detail::ObjectAccessor TAccessor>
+  Registry<TAccessor> &GetRegistry() {
+    return const_cast<Registry<TAccessor> &>(
+        const_cast<const TriggerContextCollector *>(this)->GetRegistry<TAccessor>());
+  }
+
+  bool should_register_vertex_label_changes{false};
+  bool ShouldRegisterVertexLabelChange() const;
+
+  void EnableUpdatedPropertiesTracking() {
+    vertex_registry_.should_register_updated_objects = true;
+    edge_registry_.should_register_updated_objects = true;
+    should_register_vertex_label_changes = true;
+  }
 
  private:
   template <detail::ObjectAccessor TAccessor>
@@ -331,12 +370,6 @@ class TriggerContextCollector {
     } else {
       return edge_registry_;
     }
-  }
-
-  template <detail::ObjectAccessor TAccessor>
-  Registry<TAccessor> &GetRegistry() {
-    return const_cast<Registry<TAccessor> &>(
-        const_cast<const TriggerContextCollector *>(this)->GetRegistry<TAccessor>());
   }
 
   using LabelChangesMap = std::unordered_map<std::pair<VertexAccessor, storage::LabelId>, int8_t, HashPairWithAccessor>;

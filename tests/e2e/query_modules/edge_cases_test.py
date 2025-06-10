@@ -14,6 +14,7 @@ import sys
 import pytest
 from common import connect, execute_and_fetch_all
 
+
 # this would cause a crash in the past
 def test_nested_calls():
     cursor = connect().cursor()

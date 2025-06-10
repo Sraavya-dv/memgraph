@@ -133,4 +133,3 @@ Feature: Union
             RETURN 10 as x, 11 as y UNION RETURN 11 as y
             """
         Then an error should be raised
-

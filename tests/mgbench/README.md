@@ -314,7 +314,7 @@ AWS EC2 `r7a.4xlarge`
 ## :nut_and_bolt: Supported databases
 
 Due to current [database compatibility](link) requirements, the only supported database systems at the moment are:
-1. Memgraph 
+1. Memgraph
 2. Neo4j Community Edition
 
 ### Database notes
@@ -344,7 +344,7 @@ Benchgraph is currently a passive benchmark since resource usage and saturation 
 
 Latest version: https://memgraph.com/benchgraph
 
-### Release v4 (latest) - 2024-25-07 
+### Release v4 (latest) - 2024-25-07
 
  - Updated benchmarks with the run on AWS EC2 instances: `r7i.4xlarge`  and `r7a.4xlarge`
  - Dropped the BI dataset run (due to optimization)

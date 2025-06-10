@@ -1496,7 +1496,7 @@ TYPED_TEST(TestSymbolGenerator, ListComprehensionInReturn) {
   auto *ident = IDENT("x");
   auto query = QUERY(
       SINGLE_QUERY(RETURN(NEXPR("added_numbers", LIST_COMPREHENSION(ident, LIST(LITERAL(1), LITERAL(2), LITERAL(3)),
-                                                                     nullptr, ADD(ident, LITERAL(1)))))));
+                                                                    nullptr, ADD(ident, LITERAL(1)))))));
 
   auto symbol_table = MakeSymbolTable(query);
   ASSERT_EQ(symbol_table.max_position(), 2);

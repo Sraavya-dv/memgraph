@@ -10,6 +10,7 @@
 # licenses/APL.txt.
 import mgp
 
+
 @mgp.read_proc
 def is_enterprise_valid(context: mgp.ProcCtx) -> mgp.Record(valid=bool):
     """

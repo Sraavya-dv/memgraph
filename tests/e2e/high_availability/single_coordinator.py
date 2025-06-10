@@ -15,20 +15,20 @@ from functools import partial
 import interactive_mg_runner
 import pytest
 from common import (
-    connect,
-    execute_and_fetch_all,
-    get_data_path,
-    get_logs_path,
-    get_vertex_count,
-    show_instances,
-    show_replicas,
-    show_replication_role,
-    wait_until_main_writeable_assert_replica_down,
+  connect,
+  execute_and_fetch_all,
+  get_data_path,
+  get_logs_path,
+  get_vertex_count,
+  show_instances,
+  show_replicas,
+  show_replication_role,
+  wait_until_main_writeable_assert_replica_down,
 )
 from mg_utils import (
-    mg_sleep_and_assert,
-    mg_sleep_and_assert_collection,
-    mg_sleep_and_assert_until_role_change,
+  mg_sleep_and_assert,
+  mg_sleep_and_assert_collection,
+  mg_sleep_and_assert_until_role_change,
 )
 
 interactive_mg_runner.SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))

@@ -480,4 +480,3 @@ Feature: MergeNodeAcceptance
     And the side effects should be:
       | +nodes         | 1 |
       | +properties    | 1 |
-

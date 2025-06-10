@@ -9,7 +9,9 @@
 # by the Apache License, Version 2.0, included in the file
 # licenses/APL.txt.
 
-from setup import PROP_PREFIX, MAX_PROPS, rint, MAX_PROP_VALUE
+from setup import MAX_PROP_VALUE, MAX_PROPS, PROP_PREFIX, rint
 
-print("UNWIND range(0, 50) AS i MATCH (n {%s%d: %d}) RETURN n SKIP 10000" % (
-    PROP_PREFIX, rint(MAX_PROPS), rint(MAX_PROP_VALUE)))
+print(
+    "UNWIND range(0, 50) AS i MATCH (n {%s%d: %d}) RETURN n SKIP 10000"
+    % (PROP_PREFIX, rint(MAX_PROPS), rint(MAX_PROP_VALUE))
+)

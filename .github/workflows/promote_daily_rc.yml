@@ -62,7 +62,7 @@ jobs:
         run: |
           # command here to figure out commit hash to checkout for release
           commit_hash="$(python3 tools/get_daily_commit_hash.py date)"
-          
+
           # Count the number of words (hashes) in the result
           num_hashes=$(echo "$commit_hash" | wc -w)
 
@@ -82,12 +82,12 @@ jobs:
           # Check if the tag exists locally
           if git show-ref --tags "$tag_name" > /dev/null 2>&1; then
             echo "Tag '$tag_name' exists in this repository."
-            
+
             if [ "${{ inputs.overwrite }}" = true ]; then
               echo "Overwrite flag is true, deleting tag '$tag_name' locally and on remote 'origin'."
               # Delete the local tag
               git tag -d "$tag_name"
-              
+
               # Delete the tag from the remote called 'origin'
               git push origin --delete "$tag_name"
             else
@@ -115,9 +115,9 @@ jobs:
           # checkout the commit hash we want to create the release branch from
           git checkout $COMMIT_HASH
 
-          # create release branch 
+          # create release branch
           git checkout -b $branch_name
-          
+
           # override memgraph version
           sed -i "s/set(MEMGRAPH_OVERRIDE_VERSION \"\")/set(MEMGRAPH_OVERRIDE_VERSION \"${{ inputs.release_version }}\")/" CMakeLists.txt
           git add CMakeLists.txt
@@ -131,4 +131,3 @@ jobs:
 
           # push tag to github
           git push && git push origin $tag_name
-
