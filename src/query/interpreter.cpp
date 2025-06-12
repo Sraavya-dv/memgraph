@@ -6853,21 +6853,23 @@ void Interpreter::Commit() {
 
     //  Second pass trigger match and execution
     int depth = 0;
-    constexpr int kMaxDepth = 10;
+    constexpr int kMaxDepth = 20;
 
-    std::deque<std::pair<const Trigger *, std::unordered_set<TriggerFactSignature>>> trigger_queue;
+    std::deque<std::pair<const Trigger *, std::unordered_set<TriggerFactSignature, TriggerFactSignature::Hash>>> trigger_queue;
+
+
     // std::unordered_set<std::string> seen;
 
     // Initially push triggers matching the new context
     for (const auto &trigger : trigger_store_accessor) {
       if (current_context.ShouldEventTrigger(trigger.EventType())) {
-        trigger_queue.emplace_back(&trigger, current_context.ExtractFactSignatures());
+        trigger_queue.emplace_back(&trigger, current_context.ExtractFactSignatures(storage::View::NEW, &*current_db_.execution_db_accessor_));
       }
     }
 
     while (!trigger_queue.empty() && depth < kMaxDepth) {
       std::unordered_set<std::string> seen_this_pass;
-
+/*
       std::cout << "---- Recursion Pass [" << depth + 1 << "] ----" << std::endl;
       std::cout << "Queue size: " << trigger_queue.size() << std::endl;
 
@@ -6877,19 +6879,10 @@ void Interpreter::Commit() {
       }
       std::cout << std::endl;
 
-      const auto &trigger_pair = trigger_queue.front();
-      const Trigger *trigger = trigger_pair.first;
-      const std::unordered_set<TriggerFactSignature> &previous_facts = trigger_pair.second;
-      trigger_queue.pop_front();
-
-      auto filtered_context = current_context.FilterByEventType(trigger->EventType());
-
+      
       if (!seen_this_pass.insert(trigger->Name()).second) continue;
 
       std::cout << " Recursion Pass [" << depth + 1 << "]: Firing " << trigger->Name() << std::endl;
-
-      QueryAllocator exec_mem{};
-      AdvanceCommand();
 
       TriggerContextCollector collector({TriggerEventType::CREATE, TriggerEventType::DELETE, TriggerEventType::UPDATE});
 
@@ -6898,8 +6891,61 @@ void Interpreter::Commit() {
       collector.GetRegistry<VertexAccessor>().should_register_updated_objects = true;
       collector.GetRegistry<EdgeAccessor>().should_register_updated_objects = true;
       collector.EnableVertexLabelChangeTracking();  // if needed for labels
-      std::cout << "DEBUG: should_register_updated_objects_consecutive_waves = "
-                << collector.GetRegistry<VertexAccessor>().should_register_updated_objects << std::endl;
+      
+      */
+
+      const auto [trigger, previous_facts] = trigger_queue.front();
+      trigger_queue.pop_front();
+
+      // Narrow down to JUST this trigger's events
+      auto filtered_context = current_context.FilterByEventType(trigger->EventType());
+
+      // Build a collector that watches only trigger->EventType()
+      TriggerContextCollector collector({trigger->EventType()});
+
+      // Enable exactly the right registry flags based on event type:
+      switch (trigger->EventType()) {
+        // ==== CREATION TRIGGERS ====
+        case TriggerEventType::CREATE:
+        case TriggerEventType::VERTEX_CREATE:
+          collector.GetRegistry<VertexAccessor>().should_register_created_objects = true;
+          break;
+
+        case TriggerEventType::EDGE_CREATE:
+          collector.GetRegistry<EdgeAccessor>().should_register_created_objects = true;
+          break;
+
+
+       // ==== UPDATE TRIGGERS ====
+        case TriggerEventType::UPDATE:
+        case TriggerEventType::VERTEX_UPDATE:
+          collector.EnableUpdatedPropertiesTracking();
+          collector.GetRegistry<VertexAccessor>().should_register_updated_objects = true;
+          collector.EnableVertexLabelChangeTracking();
+          break;
+
+          case TriggerEventType::EDGE_UPDATE:
+          collector.EnableUpdatedPropertiesTracking();
+          collector.GetRegistry<EdgeAccessor>().should_register_updated_objects = true;
+          break;
+
+          // ==== DELETE TRIGGERS ====
+        case TriggerEventType::DELETE:
+        case TriggerEventType::VERTEX_DELETE:
+          collector.GetRegistry<VertexAccessor>().should_register_deleted_objects = true;
+          break;
+
+        case TriggerEventType::EDGE_DELETE:
+          collector.GetRegistry<EdgeAccessor>().should_register_deleted_objects = true;
+          break;
+
+        default:
+          // For ANY or other composite event types, you can add cases or
+          // OR together multiple flags if desired.
+          break;
+      }
+      QueryAllocator exec_mem{};
+      AdvanceCommand();
 
       try {
         trigger->Execute(&*current_db_.execution_db_accessor_, current_db_.db_acc_, exec_mem.resource(),
@@ -6908,38 +6954,37 @@ void Interpreter::Commit() {
 
         std::cout << "Executing trigger: " << trigger->Name() << std::endl;
 
-        // TriggerContext next_context = std::move(collector).TransformToTriggerContext();
-        // previous_context = std::move(next_context);
-
       } catch (const utils::BasicException &e) {
         throw utils::BasicException(
             fmt::format("Recursive Trigger '{}' failed.\nException: {}", trigger->Name(), e.what()));
       }
 
-      //      auto next_context = std::move(collector).TransformToTriggerContext();
-      //     current_context = std::move(next_context);
-
+       // Transform to context and extract new facts
       TriggerContext next_context = std::move(collector).TransformToTriggerContext();
-
-      auto new_facts = next_context.ExtractFactSignatures();
+      auto new_facts = next_context.ExtractFactSignatures(storage::View::NEW, &*current_db_.execution_db_accessor_);
+      
+      // Check for any fact not seen before
       bool has_new_fact = false;
 
       for (const auto &fact : new_facts) {
         if (previous_facts.find(fact) == previous_facts.end()) {
           has_new_fact = true;
+
+           // Optional debug logging
+    std::cout << "New fact: type=" << fact.type
+              << ", gid=" << fact.gid.AsUint();
+    if (fact.property_name) std::cout << ", key=" << *fact.property_name;
+    if (fact.value_summary) std::cout << ", summary=" << *fact.value_summary;
+    std::cout << std::endl;
+
           break;
         }
       }
 
-      if (!has_new_fact) {
-        std::cout << "[Trigger] Skipping requeue of " << trigger->Name() << " due to no new facts." << std::endl;
-        continue;
-      }
-
-      current_context.Merge(next_context);
-      std::unordered_set<TriggerFactSignature> merged_facts = previous_facts;
+      /*current_context.Merge(next_context);
+      TriggerFactSet merged_facts = previous_facts;
       merged_facts.insert(new_facts.begin(), new_facts.end());
-
+       */
       // current_context.Merge(next_context);
 
       /*  std::cout << "Collected context:" << std::endl;
@@ -6948,17 +6993,21 @@ void Interpreter::Commit() {
         }
         for (const auto &created : next_context.GetCreatedEdges()) {
           std::cout << "Created Edge: GID " << created.object.Gid().AsUint() << std::endl;
-        }*/
+        }
 
       for (const auto &t : trigger_store_accessor) {
         if (!seen_this_pass.contains(t.Name()) && current_context.ShouldEventTrigger(t.EventType())) {
           std::cout << "→ Adding trigger to queue: " << t.Name() << std::endl;
-          trigger_queue.emplace_back(&t, merged_facts);
+          trigger_queue.emplace_back(&t, std::move(merged_facts));
         }
-      }
+      }*/
 
       //  new_context = std::move(next_context);
-      depth++;
+      if (has_new_fact) {
+        trigger_queue.emplace_back(trigger, std::move(new_facts));
+        depth++;
+      }
+      
     }
 
     SPDLOG_DEBUG("Finished executing before commit triggers");

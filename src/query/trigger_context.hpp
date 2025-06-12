@@ -26,12 +26,23 @@
 #include "storage/v2/view.hpp"
 #include "utils/concepts.hpp"
 #include "utils/fnv.hpp"
+#include "storage/v2/storage.hpp"
 
 #include <string>
 #include <unordered_set>
 //#include "storage/v2/gid.hpp"
 
+#include <unordered_set>
+#include "query/trigger_fact.hpp"
+
+
+
 namespace memgraph::query {
+
+  
+// Our unified alias for “sets of facts” with the right hasher + comparer:
+using TriggerFactSet = std::unordered_set<TriggerFactSignature,TriggerFactSignature::Hash,std::equal_to<TriggerFactSignature>>;
+
 namespace detail {
 template <typename T>
 concept ObjectAccessor = utils::SameAsAnyOf<T, VertexAccessor, EdgeAccessor>;
@@ -181,8 +192,9 @@ class TriggerContext {
   const auto &GetSetEdgeProperties() const { return set_edge_properties_; }
   const auto &GetRemovedEdgeProperties() const { return removed_edge_properties_; }
   TriggerContext FilterByEventType(TriggerEventType type) const;
-
-  std::unordered_set<TriggerFactSignature> ExtractFactSignatures() const;
+  
+ TriggerFactSet ExtractFactSignatures(storage::View view, DbAccessor *dba) const;
+ 
 
   void Merge(const TriggerContext &other);
 

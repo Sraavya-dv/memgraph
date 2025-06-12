@@ -14,38 +14,47 @@
 #include <functional>
 #include <optional>
 #include <string>
-#include <unordered_set>
-
-#include "storage/v2/gid.hpp"
+#include "storage/v2/storage.hpp"  // for storage::Gid
 
 namespace memgraph::query {
 
+/// A “fact” produced by a trigger, used to dedupe and detect new changes.
 struct TriggerFactSignature {
-  std::string type;
-  storage::Gid gid;
-  std::optional<std::string> property_name;
-  std::optional<std::string> label;
-  std::optional<std::string> value_summary;
+  std::string                   type;
+  storage::Gid                  gid;
+  std::optional<std::string>    property_name;
+  std::optional<std::string>    value_summary;
 
-  bool operator==(const TriggerFactSignature &other) const {
-    return type == other.type && gid == other.gid && property_name == other.property_name && label == other.label &&
-           value_summary == other.value_summary;
+  TriggerFactSignature(std::string t, storage::Gid g,
+                       std::optional<std::string> name,
+                       std::optional<std::string> val)
+      : type(std::move(t)), gid(g),
+        property_name(std::move(name)),
+        value_summary(std::move(val)) {}
+
+  bool operator==(const TriggerFactSignature &o) const {
+    return type == o.type && gid == o.gid &&
+           property_name == o.property_name &&
+           value_summary == o.value_summary;
   }
+
+  struct Hash {
+    std::size_t operator()(const TriggerFactSignature &f) const {
+      // 1) hash the type
+      std::size_t h = std::hash<std::string>()(f.type);
+      // 2) mix in the gid
+      h = h * 31 + std::hash<uint64_t>()(f.gid.AsUint());
+      // 3) mix in the property name if any
+      if (f.property_name) {
+        h = h * 31 + std::hash<std::string>()(*f.property_name);
+      }
+      // 4) mix in the new-value summary if any
+      if (f.value_summary) {
+        h = h * 31 + std::hash<std::string>()(*f.value_summary);
+      }
+      return h;
+    }
+  };
 };
 
 }  // namespace memgraph::query
-
-namespace std {
-template <>
-struct hash<memgraph::query::TriggerFactSignature> {
-  std::size_t operator()(const memgraph::query::TriggerFactSignature &sig) const {
-    std::size_t h1 = std::hash<std::string>{}(sig.type);
-    std::size_t h2 = std::hash<uint64_t>{}(sig.gid.AsUint());
-    std::size_t h3 = sig.property_name ? std::hash<std::string>{}(*sig.property_name) : 0;
-    std::size_t h4 = sig.label ? std::hash<std::string>{}(*sig.label) : 0;
-    std::size_t h5 = sig.value_summary ? std::hash<std::string>{}(*sig.value_summary) : 0;
-
-    return (((h1 ^ (h2 << 1)) ^ (h3 << 2)) ^ (h4 << 3)) ^ (h5 << 4);
-  }
-};
-}  // namespace std

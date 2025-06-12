@@ -12,6 +12,8 @@
 #include "query/trigger.hpp"
 
 #include <concepts>
+#include "query/typed_value.hpp"
+
 
 #include "query/context.hpp"
 #include "query/cypher_query_interpreter.hpp"
@@ -23,6 +25,8 @@
 #include "query/typed_value.hpp"
 #include "storage/v2/property_value.hpp"
 #include "utils/memory.hpp"
+#include <functional>   // for std::hash
+#include <optional>     // for std::optional
 
 namespace memgraph::query {
 namespace {
@@ -614,21 +618,51 @@ TriggerContextCollector::LabelChangesLists TriggerContextCollector::LabelMapToLi
   return {std::move(set_vertex_labels), std::move(removed_vertex_labels)};
 }
 
-std::unordered_set<TriggerFactSignature> TriggerContext::ExtractFactSignatures() const {
-  std::unordered_set<TriggerFactSignature> facts;
+TriggerFactSet TriggerContext::ExtractFactSignatures(storage::View view, DbAccessor *dba) const {
+std::unordered_set<TriggerFactSignature, TriggerFactSignature::Hash> facts;
 
-  for (const auto &obj : created_vertices_) facts.emplace("CREATED_VERTEX", obj.object.Gid());
-  for (const auto &obj : created_edges_) facts.emplace("CREATED_EDGE", obj.object.Gid());
-  for (const auto &obj : deleted_vertices_) facts.emplace("DELETED_VERTEX", obj.object.Gid());
-  for (const auto &obj : deleted_edges_) facts.emplace("DELETED_EDGE", obj.object.Gid());
-  for (const auto &obj : set_vertex_properties_) facts.emplace("SET_VERTEX_PROP", obj.object.Gid());
-  for (const auto &obj : removed_vertex_properties_) facts.emplace("REMOVED_VERTEX_PROP", obj.object.Gid());
-  for (const auto &obj : set_edge_properties_) facts.emplace("SET_EDGE_PROP", obj.object.Gid());
-  for (const auto &obj : removed_edge_properties_) facts.emplace("REMOVED_EDGE_PROP", obj.object.Gid());
-  for (const auto &label : set_vertex_labels_) facts.emplace("SET_VERTEX_LABEL", label.object.Gid());
-  for (const auto &label : removed_vertex_labels_) facts.emplace("REMOVED_VERTEX_LABEL", label.object.Gid());
+  // 1) Vertex property sets
+  for (const auto &obj : set_vertex_properties_) {
+  // Get the property name (pmr::string → std::string):
+  const auto pmr_name   = detail::ObjectCommonMethods::PropertyToName(dba, obj.key).ValueString();
+  const std::string name{pmr_name};
+
+  // We’re not including the new‐value summary yet, so nullopt:
+  facts.insert(TriggerFactSignature{
+      "SET_VERTEX_PROP", obj.object.Gid(),
+      std::make_optional(name),
+      std::nullopt});
+}
+
+
+  // 2) Vertex property removals
+  for (const auto &obj : removed_vertex_properties_) {
+    const auto pmr_name = detail::ObjectCommonMethods::PropertyToName(dba, obj.key).ValueString();
+    const std::string prop_name{pmr_name};
+    facts.insert(TriggerFactSignature{
+        "REMOVED_VERTEX_PROP", obj.object.Gid(), std::make_optional(prop_name), std::nullopt});
+  }
+
+  // …repeat the same pattern for edges, labels, creates, deletes…
+
+  // 3) Created vertices
+  for (const auto &obj : created_vertices_) {
+    facts.insert(TriggerFactSignature{"CREATED_VERTEX", obj.object.Gid(), std::nullopt, std::nullopt});
+  }
+  // 4) Created edges
+  for (const auto &obj : created_edges_) {
+    facts.insert(TriggerFactSignature{"CREATED_EDGE", obj.object.Gid(), std::nullopt, std::nullopt});
+  }
+  // 5) Deleted vertices
+  for (const auto &obj : deleted_vertices_) {
+    facts.insert(TriggerFactSignature{"DELETED_VERTEX", obj.object.Gid(), std::nullopt, std::nullopt});
+  }
+  // 6) Deleted edges
+  for (const auto &obj : deleted_edges_) {
+    facts.insert(TriggerFactSignature{"DELETED_EDGE", obj.object.Gid(), std::nullopt, std::nullopt});
+  }
 
   return facts;
 }
 
-}  // namespace memgraph::query
+}
