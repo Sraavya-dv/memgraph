@@ -182,15 +182,16 @@ class TriggerContext {
  public:
   const auto &GetCreatedVertices() const { return created_vertices_; }
   const auto &GetDeletedVertices() const { return deleted_vertices_; }
-  const auto &GetSetVertexProperties() const { return set_vertex_properties_; }
-  const auto &GetRemovedVertexProperties() const { return removed_vertex_properties_; }
+  const auto &GetSetVertexProperties() { return set_vertex_properties_; }
+  const auto &GetRemovedVertexProperties()  { return removed_vertex_properties_; }
   const auto &GetSetVertexLabels() const { return set_vertex_labels_; }
   const auto &GetRemovedVertexLabels() const { return removed_vertex_labels_; }
 
   const auto &GetCreatedEdges() const { return created_edges_; }
   const auto &GetDeletedEdges() const { return deleted_edges_; }
-  const auto &GetSetEdgeProperties() const { return set_edge_properties_; }
-  const auto &GetRemovedEdgeProperties() const { return removed_edge_properties_; }
+  const auto &GetSetEdgeProperties()  { return set_edge_properties_; }
+  const auto &GetRemovedEdgeProperties() { return removed_edge_properties_; }
+  //std::vector<EdgeAccessor> created_edges_;
   TriggerContext FilterByEventType(TriggerEventType type) const;
   
  TriggerFactSet ExtractFactSignatures(storage::View view, DbAccessor *dba) const;
@@ -245,6 +246,8 @@ class TriggerContext {
   std::vector<detail::DeletedObject<EdgeAccessor>> deleted_edges_;
   std::vector<detail::SetObjectProperty<EdgeAccessor>> set_edge_properties_;
   std::vector<detail::RemovedObjectProperty<EdgeAccessor>> removed_edge_properties_;
+  //std::vector<TriggerEvent<storage::EdgeAccessor>> updated_edges_;
+
 };
 
 // Collects the information necessary for triggers during a single transaction run.
@@ -374,6 +377,28 @@ class TriggerContextCollector {
     should_register_vertex_label_changes = true;
   }
 
+  void RegisterCreatedEdge(detail::CreatedObject<EdgeAccessor> ce) {
+  inserted_edges_.push_back(std::move(ce));
+}
+
+// Sprint 2
+  void RegisterDeletedEdge(detail::DeletedObject<EdgeAccessor> de) {
+  deleted_edges_buffer_.push_back(std::move(de));
+}
+  void RegisterSetEdgeProperty(detail::SetObjectProperty<EdgeAccessor> sp) {
+  updated_edge_properties_buffer_.push_back(std::move(sp));
+}
+  void RegisterRemovedEdgeProperty(detail::RemovedObjectProperty<EdgeAccessor> rp) {
+  removed_edge_properties_buffer_.push_back(std::move(rp));
+}
+
+const auto &GetCreatedEdgesBuffer() const { return inserted_edges_; }
+const auto &GetDeletedEdgesBuffer() const { return deleted_edges_buffer_; }
+const auto &GetUpdatedEdgePropertiesBuffer() const { return updated_edge_properties_buffer_; }
+const auto &GetRemovedEdgePropertiesBuffer() const { return removed_edge_properties_buffer_; }
+
+
+
  private:
   template <detail::ObjectAccessor TAccessor>
   const Registry<TAccessor> &GetRegistry() const {
@@ -401,5 +426,11 @@ class TriggerContextCollector {
   // We want to register only the global change, at the end of the transaction. The change consists of
   // the state of the label before the transaction start, and the latest state assigned throughout the transaction.
   LabelChangesMap label_changes_;
+
+  std::vector<detail::CreatedObject<EdgeAccessor>> inserted_edges_; 
+  std::vector<detail::DeletedObject<EdgeAccessor>> deleted_edges_buffer_;
+  std::vector<detail::SetObjectProperty<EdgeAccessor>> updated_edge_properties_buffer_;
+  std::vector<detail::RemovedObjectProperty<EdgeAccessor>> removed_edge_properties_buffer_;
+
 };
 }  // namespace memgraph::query

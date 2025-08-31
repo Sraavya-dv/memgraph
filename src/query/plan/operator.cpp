@@ -449,6 +449,28 @@ VertexAccessor &CreateLocalVertex(const NodeCreationInfo &node_info, Frame *fram
                                   std::vector<storage::LabelId> &labels, ExpressionEvaluator &evaluator) {
   auto &dba = *context.db_accessor;
   auto new_node = dba.InsertVertex();
+  // --- Auto-assign :Company label and id property ---
+auto label_company = dba.NameToLabel("Company");
+auto res_label = new_node.AddLabel(label_company);
+if (!res_label.HasError()) {
+    std::cout << "[CREATE] Added :Company label to vertex " << new_node.Gid().AsUint() << "\n";
+} else {
+    std::cout << "[CREATE][WARN] Failed to add :Company label to vertex "
+              << new_node.Gid().AsUint() << "\n";
+}
+
+// Set 'id' property equal to GID value
+auto prop_id = dba.NameToProperty("id");
+storage::PropertyValue id_value(static_cast<int64_t>(new_node.Gid().AsUint()));
+auto res_prop = new_node.SetProperty(prop_id, id_value);
+if (!res_prop.HasError()) {
+    std::cout << "[CREATE] Set id property for vertex " << new_node.Gid().AsUint()
+              << " = " << new_node.Gid().AsUint() << "\n";
+} else {
+    std::cout << "[CREATE][WARN] Failed to set id property for vertex "
+              << new_node.Gid().AsUint() << "\n";
+}
+
   context.execution_stats[ExecutionStats::Key::CREATED_NODES] += 1;
   for (const auto &label : labels) {
     auto maybe_error = std::invoke([&] { return new_node.AddLabel(label); });
@@ -609,6 +631,7 @@ namespace {
 EdgeAccessor CreateEdge(const EdgeCreationInfo &edge_info, const storage::EdgeTypeId edge_type_id, DbAccessor *dba,
                         VertexAccessor *from, VertexAccessor *to, Frame *frame, ExecutionContext &context,
                         ExpressionEvaluator *evaluator) {
+                          std::cout << "[DEBUG] Inside CreateEdge()" << std::endl;
   auto maybe_edge = dba->InsertEdge(from, to, edge_type_id);
   if (maybe_edge.HasValue()) {
     auto &edge = *maybe_edge;
@@ -627,6 +650,39 @@ EdgeAccessor CreateEdge(const EdgeCreationInfo &edge_info, const storage::EdgeTy
       }
     }
     if (context.evaluation_context.scope.in_merge) {
+      /*if (edge_type_id == dba->NameToEdgeType("OWN")) {
+        // Validate percentage
+        auto props_res = edge.Properties(storage::View::NEW);
+        if (!props_res.HasError()) {
+            const auto &props = props_res.GetValue();
+            auto it = props.find(dba->NameToProperty("percentage"));
+            if (it != props.end()) {
+                double pct = it->second.ValueDouble();
+                if (pct < 0.0 || pct > 100.0) {
+                    std::cout << "[MERGE][ERROR] Invalid OWN percentage: " << pct << "\n";
+                    dba->RemoveEdge(&edge);
+                }
+            }
+        }
+
+        // Prevent duplicate OWN between same nodes
+        auto from_node = edge.From();
+        auto to_node   = edge.To();
+        auto out_edges_res = from_node.OutEdges(storage::View::NEW);
+        if (!out_edges_res.HasError()) {
+            for (const auto &e2 : out_edges_res.GetValue().edges) {
+                if (e2.To().Gid() == to_node.Gid() &&
+                    dba->EdgeTypeToName(e2.EdgeType()) == "OWN" &&
+                    e2.Gid() != edge.Gid()) {
+                    std::cout << "[MERGE][WARN] Duplicate OWN skipped: "
+                              << from_node.Gid().AsUint() << " -> "
+                              << to_node.Gid().AsUint() << "\n";
+                    dba->RemoveEdge(&edge);
+                    break;
+                }
+            }
+        }
+    }*/
       for (const auto &[k, v] : properties) {
         if (v.IsNull()) {
           throw QueryRuntimeException(fmt::format("Can't have null literal properties inside merge ({}.{})!",

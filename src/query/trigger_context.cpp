@@ -569,13 +569,42 @@ TriggerContext TriggerContextCollector::TransformToTriggerContext() && {
   auto [set_vertex_labels, removed_vertex_labels] = LabelMapToList(std::move(label_changes_));
   auto [created_edges, deleted_edges, set_edge_properties, removed_edge_properties] =
       Summarize(std::move(edge_registry_));
+  
 
-  return {std::move(created_vertices),      std::move(deleted_vertices),
-          std::move(set_vertex_properties), std::move(removed_vertex_properties),
-          std::move(set_vertex_labels),     std::move(removed_vertex_labels),
-          std::move(created_edges),         std::move(deleted_edges),
-          std::move(set_edge_properties),   std::move(removed_edge_properties)};
-}
+   deleted_edges.reserve(deleted_edges.size() + deleted_edges_buffer_.size());
+  for (auto &de : deleted_edges_buffer_) {
+    deleted_edges.push_back(std::move(de));
+  }
+
+  set_edge_properties.reserve(set_edge_properties.size() + updated_edge_properties_buffer_.size());
+  for (auto &up : updated_edge_properties_buffer_) {
+    set_edge_properties.push_back(std::move(up));
+  }
+
+  removed_edge_properties.reserve(removed_edge_properties.size() + removed_edge_properties_buffer_.size());
+  for (auto &rp : removed_edge_properties_buffer_) {
+    removed_edge_properties.push_back(std::move(rp));
+  }
+  
+  // Append our “positive‐diff” edge buffer into created_edges
+  created_edges.reserve(created_edges.size() + inserted_edges_.size());
+  for (auto &ce : inserted_edges_) {
+    created_edges.push_back(std::move(ce));
+  }
+
+  // Now construct the TriggerContext with the augmented created_edges
+   return {
+    std::move(created_vertices),
+    std::move(deleted_vertices),
+    std::move(set_vertex_properties),
+    std::move(removed_vertex_properties),
+    std::move(set_vertex_labels),
+    std::move(removed_vertex_labels),
+    std::move(created_edges),
+    std::move(deleted_edges),
+    std::move(set_edge_properties),
+    std::move(removed_edge_properties)
+  };}
 
 TriggerContext TriggerContext::FilterByEventType(TriggerEventType type) const {
   TriggerContext filtered;

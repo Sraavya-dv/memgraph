@@ -12,7 +12,7 @@
 #include "query/interpreter.hpp"
 #include <bits/ranges_algo.h>
 #include <fmt/core.h>
-
+#include "query/edge_accessor.hpp"
 #include <algorithm>
 #include <atomic>
 #include <chrono>
@@ -6753,31 +6753,46 @@ void Interpreter::Commit() {
     frame_change_collector_.reset();
   }
 
+
+
+
+
+
+
+
+
+
+
   if (trigger_context) {
-    //    // Run the triggers
-    //  for (const auto &trigger : db->trigger_store()->BeforeCommitTriggers().access()) {
-    //     QueryAllocator execution_memory{};
-    //     AdvanceCommand();
-    //     try {
-    //       trigger.Execute(&*current_db_.execution_db_accessor_, current_db_.db_acc_, execution_memory.resource(),
-    //                        flags::run_time::GetExecutionTimeout(), &interpreter_context_->is_shutting_down,
-    //                        &transaction_status_, *trigger_context);
-    //      } catch (const utils::BasicException &e) {
-    //        throw utils::BasicException(
-    //            fmt::format("Trigger '{}' caused the transaction to fail.\nException: {}", trigger.Name(), e.what()));
-    //      }
-    //    }
-    //    SPDLOG_DEBUG("Finished executing before commit triggers");
-    //  }
 
-    auto trigger_store_accessor = db->trigger_store()->BeforeCommitTriggers().access();
-    auto it = trigger_store_accessor.begin();
+/*
 
-    TriggerContextCollector collector({TriggerEventType::CREATE, TriggerEventType::DELETE, TriggerEventType::UPDATE});
+    TriggerContextCollector collector({
+  TriggerEventType::VERTEX_CREATE,
+  TriggerEventType::EDGE_CREATE,
+  TriggerEventType::VERTEX_UPDATE,
+  TriggerEventType::EDGE_UPDATE,
+  TriggerEventType::VERTEX_DELETE,
+  TriggerEventType::EDGE_DELETE,
+});
     collector.EnableUpdatedPropertiesTracking();
-    collector.GetRegistry<VertexAccessor>().should_register_updated_objects = true;
-    collector.GetRegistry<EdgeAccessor>().should_register_updated_objects = true;
+    collector.GetRegistry<EdgeAccessor>().should_register_created_objects = true;
+collector.GetRegistry<EdgeAccessor>().should_register_updated_objects = true;
+collector.GetRegistry<EdgeAccessor>().should_register_deleted_objects = true;
+collector.GetRegistry<VertexAccessor>().should_register_created_objects = true;
+collector.GetRegistry<VertexAccessor>().should_register_updated_objects = true;
+collector.GetRegistry<VertexAccessor>().should_register_deleted_objects = true;
     collector.EnableVertexLabelChangeTracking();
+    collector.EnableUpdatedPropertiesTracking();
+
+    std::cout << "[DBG] first wave flags: created=" 
+            << collector.GetRegistry<EdgeAccessor>().created_objects.size()
+            << ", deleted=" 
+            << collector.GetRegistry<EdgeAccessor>().deleted_objects.size()
+            << ", updatedProps=" 
+            << collector.GetRegistry<EdgeAccessor>().property_changes.size()
+            << std::endl;
+
 
     std::cout << "DEBUG: should_register_updated_objects_first wave = "
               << collector.GetRegistry<VertexAccessor>().should_register_updated_objects << std::endl;
@@ -6786,6 +6801,7 @@ void Interpreter::Commit() {
       const auto &trigger = *it;
       QueryAllocator execution_memory{};
       AdvanceCommand();
+     
 
       try {
         trigger.Execute(&*current_db_.execution_db_accessor_, current_db_.db_acc_, execution_memory.resource(),
@@ -6800,99 +6816,347 @@ void Interpreter::Commit() {
     }
 
     SPDLOG_DEBUG("Finished executing before commit triggers");
+   // NEW:
+     // TriggerContext current_context = std::move(*trigger_context);
 
-    TriggerContext current_context = std::move(collector).TransformToTriggerContext();
+      //std::cout << "[DEBUG] createdEdges count = " << current_context.GetCreatedEdges().size() << "\n";
 
     size_t updated_count =
         current_context.GetSetVertexProperties().size() + current_context.GetRemovedVertexProperties().size() +
         current_context.GetSetVertexLabels().size() + current_context.GetRemovedVertexLabels().size();
 
     std::cout << "Updated vertices (first wave): " << updated_count << std::endl;
+*/
 
-    /*std::cout << "----- Trigger context collected after first wave -----" << std::endl;
 
-    for (const auto &created : current_context.GetCreatedVertices()) {
-      auto gid = created.object.Gid().AsUint();
-      std::cout << "Vertex created: GID " << gid << std::endl;
+
+    auto trigger_store_accessor = db->trigger_store()->BeforeCommitTriggers().access();
+    auto it = trigger_store_accessor.begin();
+
+   TriggerContext current_context = std::move(*trigger_context);
+
+    auto &ctx = *trigger_context;
+    //  control edge tracking
+std::unordered_set<std::pair<uint64_t, uint64_t>, boost::hash<std::pair<uint64_t, uint64_t>>> current_controls;
+std::unordered_set<std::pair<uint64_t, uint64_t>, boost::hash<std::pair<uint64_t, uint64_t>>> final_control_edges;
+
+    
+auto dba = &*current_db_.execution_db_accessor_;
+
+//Audit logging 
+auto log_label = dba->NameToLabel("Log");
+auto prop_message = dba->NameToProperty("message");
+auto prop_timestamp = dba->NameToProperty("timestamp");
+auto prop_total_ownership = dba->NameToProperty("total_ownership");
+
+auto log_event = [&](const std::string &msg) {
+    auto log_node = dba->InsertVertex();
+    log_node.AddLabel(log_label);
+    log_node.SetProperty(prop_message, storage::PropertyValue(msg));
+    log_node.SetProperty(prop_timestamp, storage::PropertyValue((int64_t)time(nullptr)));
+};
+
+
+auto label_company = dba->NameToLabel("Company");
+auto prop_id = dba->NameToProperty("id");
+auto prop_percentage = dba->NameToProperty("percentage");
+
+//  Tracking OWN delta 
+std::unordered_map<std::pair<uint64_t, uint64_t>, double, boost::hash<std::pair<uint64_t, uint64_t>>> own_plus;
+std::unordered_map<std::pair<uint64_t, uint64_t>, double, boost::hash<std::pair<uint64_t, uint64_t>>> own_minus;
+
+// Pass 1: Vertices
+for (const auto &cv : current_context.GetCreatedVertices()) {
+    auto v = cv.object; 
+
+    // Company label
+    auto labels_res = v.Labels(storage::View::NEW);
+    bool has_label = false;
+    if (!labels_res.HasError()) {
+        for (auto lbl : labels_res.GetValue()) {
+            if (lbl == label_company) {
+                has_label = true;
+                break;
+            }
+        }
+    }
+    if (!has_label) {
+        auto res = v.AddLabel(label_company);
+        if (!res.HasError()) {
+            std::cout << "[CREATE] Added :Company label to vertex " << v.Gid().AsUint() << "\n";
+        }
     }
 
-    for (const auto &deleted : current_context.GetDeletedVertices()) {
-      std::cout << "Vertex deleted: " << deleted.object.Gid().AsUint() << std::endl;
+    // `id` property
+    auto props_res = v.Properties(storage::View::NEW);
+    if (props_res.HasError()) continue;
+    auto props = props_res.GetValue();
+
+    bool has_id = props.find(prop_id) != props.end();
+    if (!has_id) {
+        storage::PropertyValue pv_int(static_cast<int64_t>(v.Gid().AsUint()));
+        v.SetProperty(prop_id, pv_int);
+        std::cout << "[CREATE] Set id property for vertex " << v.Gid().AsUint() << " = " << v.Gid().AsUint() << "\n";
+    } else {
+        // Duplicate vertex id check
+        auto id_val = props[prop_id].ValueInt();
+        for (const auto &existing_v : dba->Vertices(storage::View::NEW)) {
+            if (existing_v.Gid() != v.Gid()) {
+                auto ex_props_res = existing_v.Properties(storage::View::NEW);
+                if (ex_props_res.HasError()) continue;
+                auto ex_props = ex_props_res.GetValue();
+                auto it = ex_props.find(prop_id);
+                if (it != ex_props.end() && it->second.ValueInt() == id_val) {
+                    std::cout << "[WARN] Duplicate vertex id=" << id_val 
+                              << " → deleting new vertex " << v.Gid().AsUint() << "\n";
+                    dba->RemoveVertex(&v);
+                    break;
+                }
+            }
+        }
     }
-    for (const auto &created : current_context.GetCreatedEdges()) {
-      std::cout << "Edge created: " << created.object.Gid().AsUint() << std::endl;
+}
+//Pass 2: Created OWN edges
+for (const auto &ce : current_context.GetCreatedEdges()) {
+    const auto &edge = ce.object;
+    if (dba->EdgeTypeToName(edge.EdgeType()) != "OWN") continue;
+
+    auto from_gid = edge.From().Gid().AsUint();
+    auto to_gid   = edge.To().Gid().AsUint();
+
+    // check percentage
+    auto props_res = edge.Properties(storage::View::NEW);
+    if (props_res.HasError()) {
+        dba->RemoveEdge(const_cast<EdgeAccessor*>(&edge));
+        continue;
     }
-    for (const auto &deleted : current_context.GetDeletedEdges()) {
-      std::cout << "Edge deleted: " << deleted.object.Gid().AsUint() << std::endl;
-     } */
+    auto props = props_res.GetValue();
 
-    std::cout << "Modified Properties and Labels in Context:" << std::endl;
-    auto dba = &*current_db_.execution_db_accessor_;
+    auto it_pct = props.find(prop_percentage);
+    if (it_pct != props.end()) {
+        double pct = it_pct->second.ValueDouble();
+        if (pct < 0.0 || pct > 100.0) {
+            std::cout << "[ERROR] Invalid OWN percentage: " << pct
+                      << " → removing edge " << from_gid << " -> " << to_gid << "\n";
+            dba->RemoveEdge(const_cast<EdgeAccessor*>(&edge));
+            continue;
+        }
 
-    for (const auto &prop : current_context.GetSetVertexProperties()) {
-      std::cout << "  SET SET SET SET  property: GID " << prop.object.Gid().AsUint()
-                << ", key = " << dba->PropertyToName(prop.key) << ", property changed (value types logged)"
-                << std::endl;
+        // Duplicate OWN check (existing already in DB)
+        bool dup_found = false;
+        auto from_node = dba->FindVertex(storage::Gid::FromUint(from_gid), storage::View::NEW);
+        if (from_node) {
+            auto out_edges_res = from_node->OutEdges(storage::View::NEW);
+            if (!out_edges_res.HasError()) {
+                for (const auto &e2 : out_edges_res.GetValue().edges) {
+                    if (e2.To().Gid() == edge.To().Gid() &&
+                        dba->EdgeTypeToName(e2.EdgeType()) == "OWN" &&
+                        e2.Gid() != edge.Gid()) {
+                        std::cout << "[WARN] Duplicate OWN edge skipped: "
+                                  << from_gid << " -> " << to_gid << "\n";
+                        dba->RemoveEdge(const_cast<EdgeAccessor*>(&edge));
+                        dup_found = true;
+                        break;
+                    }
+                }
+            }
+        }
+        if (!dup_found) {
+            own_plus[{from_gid, to_gid}] += pct;
+        }
     }
-    /*
-    for (const auto &prop : current_context.GetRemovedVertexProperties()) {
-      std::cout << "  REMOVED property: GID " << prop.object.Gid().AsUint()
-                << ", property removed (value type logged)" << std::endl;
+}
 
+//  Pass 3: Deleted OWN edges 
+for (const auto &e : current_context.GetDeletedEdges()) {
+    const auto &edge = e.object;
+    if (dba->EdgeTypeToName(edge.EdgeType()) != "OWN") continue;
+
+    auto props_res = edge.Properties(storage::View::OLD);
+    if (props_res.HasError()) continue;
+    double pct = props_res.GetValue()[prop_percentage].ValueDouble();
+    own_minus[{edge.From().Gid().AsUint(), edge.To().Gid().AsUint()}] += pct;
+}
+
+// Pass 4: Updated OWN edges 
+for (const auto &change : current_context.GetSetEdgeProperties()) {
+    const auto &edge = change.object;
+    if (dba->EdgeTypeToName(edge.EdgeType()) != "OWN") continue;
+
+    auto old_props = edge.Properties(storage::View::OLD);
+    auto new_props = edge.Properties(storage::View::NEW);
+    if (old_props.HasError() || new_props.HasError()) continue;
+
+    double old_pct = old_props.GetValue()[prop_percentage].ValueDouble();
+    double new_pct = new_props.GetValue()[prop_percentage].ValueDouble();
+
+    own_minus[{edge.From().Gid().AsUint(), edge.To().Gid().AsUint()}] += old_pct;
+    own_plus[{edge.From().Gid().AsUint(), edge.To().Gid().AsUint()}]  += new_pct;
+}
+
+// Ownership  table view 
+std::unordered_map<std::pair<uint64_t,uint64_t>, double, boost::hash<std::pair<uint64_t,uint64_t>>> ownership;
+
+// Load existing OWN edges from DB
+for (const auto &v : dba->Vertices(storage::View::NEW)) {
+    auto edges_res = v.OutEdges(storage::View::NEW);
+    if (edges_res.HasError()) continue;
+    for (const auto &e : edges_res.GetValue().edges) {
+        if (dba->EdgeTypeToName(e.EdgeType()) != "OWN") continue;
+        double pct = e.Properties(storage::View::NEW).GetValue()[prop_percentage].ValueDouble();
+        ownership[{e.From().Gid().AsUint(), e.To().Gid().AsUint()}] += pct;
     }
+}
 
-    for (const auto &label : current_context.GetSetVertexLabels()) {
-      std::cout << "  SET label: GID " << label.object.Gid().AsUint()
-                << ", label ID = " << label.label_id.AsUint() << std::endl;
+// deletions first, then additions
+for (const auto &[k, v] : own_minus) {
+    ownership[k] -= v;
+    if (ownership[k] < 0.0) ownership[k] = 0.0;
+}
+for (const auto &[k, v] : own_plus) {
+    ownership[k] += v;
+}
+
+//  Step 3a: Direct control edges 
+for (const auto &[k, pct] : ownership) {
+    if (pct > 50.0) {
+        auto from = dba->FindVertex(storage::Gid::FromUint(k.first), storage::View::NEW);
+        auto to   = dba->FindVertex(storage::Gid::FromUint(k.second), storage::View::NEW);
+        if (!from || !to) continue;
+        bool exists = false;
+        for (const auto &e : from->OutEdges(storage::View::NEW).GetValue().edges) {
+            if (e.To().Gid() == to->Gid() && dba->EdgeTypeToName(e.EdgeType()) == "CONTROLS") {
+                exists = true;
+                break;
+            }
+        }
+        if (!exists) {
+            auto res = dba->InsertEdge(&*from, &*to, dba->NameToEdgeType("CONTROLS"));
+            if (!res.HasError()) {
+    std::cout << "CONTROL⁺: " << k.first << " -> " << k.second << "\n";
+    res.GetValue().SetProperty(prop_total_ownership, storage::PropertyValue(pct));
+    log_event("CONTROL+ created: " + std::to_string(k.first) + " -> " + std::to_string(k.second) +
+              " (total=" + std::to_string(pct) + "%)");
+}
+
+        }
     }
+}
 
-    for (const auto &label : current_context.GetRemovedVertexLabels()) {
-      std::cout << "  REMOVED label: GID " << label.object.Gid().AsUint()
-                << ", label ID = " << label.label_id.AsUint() << std::endl;
-    }*/
+// Step 4a/b: Recursive control inference 
+std::unordered_map<std::pair<uint64_t,uint64_t>, double, boost::hash<std::pair<uint64_t,uint64_t>>> indirect;
+for (const auto &[k, pct] : ownership) {
+    if (pct <= 50.0) continue;
+    std::deque<std::pair<uint64_t,double>> q{{k.second, pct}};
+    std::unordered_map<uint64_t,double> vis{{k.second, pct}};
+    while (!q.empty()) {
+        auto [cur, sofar] = q.front(); q.pop_front();
+        indirect[{k.first, cur}] = std::max(indirect[{k.first, cur}], sofar);
+        for (const auto &[next, next_pct] : ownership) {
+            if (next.first == cur) {
+                double combined = sofar * next_pct / 100.0;
+                if (combined > vis[next.second]) {
+                    vis[next.second] = combined;
+                    q.emplace_back(next.second, combined);
+                }
+            }
+        }
+    }
+}
 
-    //  Second pass trigger match and execution
-    int depth = 0;
-    constexpr int kMaxDepth = 20;
+// Recursive control+ insertion
+for (const auto &[k, pct] : indirect) {
+    if (pct > 50.0) {
+        auto from = dba->FindVertex(storage::Gid::FromUint(k.first), storage::View::NEW);
+        auto to   = dba->FindVertex(storage::Gid::FromUint(k.second), storage::View::NEW);
+        if (!from || !to) continue;
+        bool exists = false;
+        for (const auto &e : from->OutEdges(storage::View::NEW).GetValue().edges) {
+            if (e.To().Gid() == to->Gid() && dba->EdgeTypeToName(e.EdgeType()) == "CONTROLS") {
+                exists = true;
+                break;
+            }
+        }
+        if (!exists) {
+            auto res = dba->InsertEdge(&*from, &*to, dba->NameToEdgeType("CONTROLS"));
+            if (!res.HasError()) {
+    std::cout << "RECURSIVE CONTROL⁺: " << k.first << " -> " << k.second << " (" << pct << "%)\n";
+    res.GetValue().SetProperty(prop_total_ownership, storage::PropertyValue(pct));
+    log_event("RECURSIVE CONTROL+ created: " + std::to_string(k.first) + " -> " + std::to_string(k.second) +
+              " (total=" + std::to_string(pct) + "%)");
+}
 
-    std::deque<std::pair<const Trigger *, std::unordered_set<TriggerFactSignature, TriggerFactSignature::Hash>>> trigger_queue;
+        }
+    }
+}
+
+// Step 3b+4c: Remove outdated controls
+std::unordered_set<std::pair<uint64_t,uint64_t>, boost::hash<std::pair<uint64_t,uint64_t>>> expected;
+for (const auto &[k, pct] : ownership) if (pct > 50.0) expected.insert(k);
+for (const auto &[k, pct] : indirect)  if (pct > 50.0) expected.insert(k);
+
+for (const auto &v : dba->Vertices(storage::View::NEW)) {
+    auto out_res = v.OutEdges(storage::View::NEW);
+    if (out_res.HasError()) continue;
+    for (const auto &e : out_res.GetValue().edges) {
+        if (dba->EdgeTypeToName(e.EdgeType()) != "CONTROLS") continue;
+        uint64_t from = e.From().Gid().AsUint();
+        uint64_t to   = e.To().Gid().AsUint();
+        if (!expected.contains({from, to})) {
+            auto res = dba->RemoveEdge(const_cast<EdgeAccessor*>(&e));
+            if (!res.HasError()) {
+                log_event("CONTROL removed: " + std::to_string(from) + " -> " + std::to_string(to));
+              }
+        }
+    }
+}
 
 
-    // std::unordered_set<std::string> seen;
 
-    // Initially push triggers matching the new context
-    for (const auto &trigger : trigger_store_accessor) {
-      if (current_context.ShouldEventTrigger(trigger.EventType())) {
-        trigger_queue.emplace_back(&trigger, current_context.ExtractFactSignatures(storage::View::NEW, &*current_db_.execution_db_accessor_));
+// Remove any existing CONTROL edge not in final expected set
+/*for (const auto &pair : current_controls) {
+  if (!final_control_edges.contains(pair)) {
+    auto from_node = dba->FindVertex(storage::Gid::FromUint(pair.first), storage::View::NEW);
+    auto to_node   = dba->FindVertex(storage::Gid::FromUint(pair.second), storage::View::NEW);
+    if (!from_node || !to_node) continue;
+
+    auto out_edges_res = from_node->OutEdges(storage::View::NEW);
+    if (out_edges_res.HasError()) continue;
+
+    for (const auto &edge : out_edges_res.GetValue().edges) {
+      if (edge.To().Gid() == to_node->Gid() &&
+          dba->EdgeTypeToName(edge.EdgeType()) == "CONTROLS") {
+        auto res = dba->RemoveEdge(const_cast<EdgeAccessor *>(&edge));
+        if (!res.HasError()) {
+          std::cout << "REMOVED CONTROL: " << pair.first << " -> " << pair.second << "\n";
+        }
+        break;
       }
     }
+  }
+}*/
+
+
+
+
+
+
+
+
+
+/*
+
+for (const auto &t : trigger_store_accessor) {
+  if (current_context.ShouldEventTrigger(t.EventType())) {
+    auto facts = current_context.ExtractFactSignatures(storage::View::NEW, dba);
+    trigger_queue.emplace_back(&t, std::move(facts));
+  }
+}
+
 
     while (!trigger_queue.empty() && depth < kMaxDepth) {
       std::unordered_set<std::string> seen_this_pass;
-/*
-      std::cout << "---- Recursion Pass [" << depth + 1 << "] ----" << std::endl;
-      std::cout << "Queue size: " << trigger_queue.size() << std::endl;
 
-      std::cout << "Triggers in queue: ";
-      for (const auto &[t, _] : trigger_queue) {
-        std::cout << t->Name() << " ";
-      }
-      std::cout << std::endl;
-
-      
-      if (!seen_this_pass.insert(trigger->Name()).second) continue;
-
-      std::cout << " Recursion Pass [" << depth + 1 << "]: Firing " << trigger->Name() << std::endl;
-
-      TriggerContextCollector collector({TriggerEventType::CREATE, TriggerEventType::DELETE, TriggerEventType::UPDATE});
-
-      collector.EnableUpdatedPropertiesTracking();
-
-      collector.GetRegistry<VertexAccessor>().should_register_updated_objects = true;
-      collector.GetRegistry<EdgeAccessor>().should_register_updated_objects = true;
-      collector.EnableVertexLabelChangeTracking();  // if needed for labels
-      
-      */
 
       const auto [trigger, previous_facts] = trigger_queue.front();
       trigger_queue.pop_front();
@@ -6905,8 +7169,7 @@ void Interpreter::Commit() {
 
       // Enable exactly the right registry flags based on event type:
       switch (trigger->EventType()) {
-        // ==== CREATION TRIGGERS ====
-        case TriggerEventType::CREATE:
+
         case TriggerEventType::VERTEX_CREATE:
           collector.GetRegistry<VertexAccessor>().should_register_created_objects = true;
           break;
@@ -6915,9 +7178,6 @@ void Interpreter::Commit() {
           collector.GetRegistry<EdgeAccessor>().should_register_created_objects = true;
           break;
 
-
-       // ==== UPDATE TRIGGERS ====
-        case TriggerEventType::UPDATE:
         case TriggerEventType::VERTEX_UPDATE:
           collector.EnableUpdatedPropertiesTracking();
           collector.GetRegistry<VertexAccessor>().should_register_updated_objects = true;
@@ -6929,7 +7189,6 @@ void Interpreter::Commit() {
           collector.GetRegistry<EdgeAccessor>().should_register_updated_objects = true;
           break;
 
-          // ==== DELETE TRIGGERS ====
         case TriggerEventType::DELETE:
         case TriggerEventType::VERTEX_DELETE:
           collector.GetRegistry<VertexAccessor>().should_register_deleted_objects = true;
@@ -6940,19 +7199,18 @@ void Interpreter::Commit() {
           break;
 
         default:
-          // For ANY or other composite event types, you can add cases or
-          // OR together multiple flags if desired.
           break;
       }
+
       QueryAllocator exec_mem{};
       AdvanceCommand();
+
+      
 
       try {
         trigger->Execute(&*current_db_.execution_db_accessor_, current_db_.db_acc_, exec_mem.resource(),
                          flags::run_time::GetExecutionTimeout(), &interpreter_context_->is_shutting_down,
                          &transaction_status_, filtered_context, &collector);
-
-        std::cout << "Executing trigger: " << trigger->Name() << std::endl;
 
       } catch (const utils::BasicException &e) {
         throw utils::BasicException(
@@ -6961,46 +7219,22 @@ void Interpreter::Commit() {
 
        // Transform to context and extract new facts
       TriggerContext next_context = std::move(collector).TransformToTriggerContext();
-      auto new_facts = next_context.ExtractFactSignatures(storage::View::NEW, &*current_db_.execution_db_accessor_);
+      std::cout << "[DEBUG] createdEdges count = " << current_context.GetCreatedEdges().size() << "\n";
       
-      // Check for any fact not seen before
+      auto next = std::move(collector).TransformToTriggerContext();
+      auto new_facts = next_context.ExtractFactSignatures(storage::View::NEW, &*current_db_.execution_db_accessor_);
+
+
+      // Check for any fact not seen before  
       bool has_new_fact = false;
 
       for (const auto &fact : new_facts) {
         if (previous_facts.find(fact) == previous_facts.end()) {
           has_new_fact = true;
-
-           // Optional debug logging
-    std::cout << "New fact: type=" << fact.type
-              << ", gid=" << fact.gid.AsUint();
-    if (fact.property_name) std::cout << ", key=" << *fact.property_name;
-    if (fact.value_summary) std::cout << ", summary=" << *fact.value_summary;
-    std::cout << std::endl;
-
           break;
         }
       }
 
-      /*current_context.Merge(next_context);
-      TriggerFactSet merged_facts = previous_facts;
-      merged_facts.insert(new_facts.begin(), new_facts.end());
-       */
-      // current_context.Merge(next_context);
-
-      /*  std::cout << "Collected context:" << std::endl;
-        for (const auto &created : next_context.GetCreatedVertices()) {
-          std::cout << "Created Vertex: GID " << created.object.Gid().AsUint() << std::endl;
-        }
-        for (const auto &created : next_context.GetCreatedEdges()) {
-          std::cout << "Created Edge: GID " << created.object.Gid().AsUint() << std::endl;
-        }
-
-      for (const auto &t : trigger_store_accessor) {
-        if (!seen_this_pass.contains(t.Name()) && current_context.ShouldEventTrigger(t.EventType())) {
-          std::cout << "→ Adding trigger to queue: " << t.Name() << std::endl;
-          trigger_queue.emplace_back(&t, std::move(merged_facts));
-        }
-      }*/
 
       //  new_context = std::move(next_context);
       if (has_new_fact) {
@@ -7011,7 +7245,16 @@ void Interpreter::Commit() {
     }
 
     SPDLOG_DEBUG("Finished executing before commit triggers");
+    */
   }
+
+
+
+
+
+
+
+
   const auto reset_necessary_members = [this]() {
     for (auto &qe : query_executions_) {
       if (qe) qe->CleanRuntimeData();

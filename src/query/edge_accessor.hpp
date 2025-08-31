@@ -39,7 +39,8 @@ class EdgeAccessor final {
     return impl_.GetPropertySize(key, view);
   }
 
-  storage::Result<storage::PropertyValue> SetProperty(storage::PropertyId key, const storage::PropertyValue &value) {
+  storage::Result<storage::PropertyValue> SetProperty(storage::PropertyId key,
+                                                       const storage::PropertyValue &value) {
     return impl_.SetProperty(key, value);
   }
 
@@ -52,8 +53,8 @@ class EdgeAccessor final {
     return impl_.UpdateProperties(properties);
   }
 
-  storage::Result<storage::PropertyValue> RemoveProperty(storage::PropertyId key) {
-    return SetProperty(key, storage::PropertyValue());
+  storage::Result<storage::PropertyValue> RemoveProperty(storage::PropertyId key)  {
+    return impl_.SetProperty(key, storage::PropertyValue{});
   }
 
   storage::Result<std::map<storage::PropertyId, storage::PropertyValue>> ClearProperties() {
@@ -73,6 +74,8 @@ class EdgeAccessor final {
   VertexAccessor DeletedEdgeFromVertex() const;
 
   bool IsCycle() const;
+
+ 
 
   int64_t CypherId() const { return impl_.Gid().AsInt(); }
 
