@@ -1,4 +1,4 @@
-// Copyright 2025 Memgraph Ltd.
+// Copyright 2026 Memgraph Ltd.
 //
 // Use of this software is governed by the Business Source License
 // included in the file licenses/BSL.txt; by using this file, you agree to be bound by the terms of the Business Source
@@ -450,26 +450,26 @@ VertexAccessor &CreateLocalVertex(const NodeCreationInfo &node_info, Frame *fram
   auto &dba = *context.db_accessor;
   auto new_node = dba.InsertVertex();
   // --- Auto-assign :Company label and id property ---
-auto label_company = dba.NameToLabel("Company");
-auto res_label = new_node.AddLabel(label_company);
-if (!res_label.HasError()) {
-    std::cout << "[CREATE] Added :Company label to vertex " << new_node.Gid().AsUint() << "\n";
-} else {
-    std::cout << "[CREATE][WARN] Failed to add :Company label to vertex "
-              << new_node.Gid().AsUint() << "\n";
-}
+  /*auto label_company = dba.NameToLabel("Company");
+  auto res_label = new_node.AddLabel(label_company);
+  if (!res_label.HasError()) {
+      std::cout << "[CREATE] Added :Company label to vertex " << new_node.Gid().AsUint() << "\n";
+  } else {
+      std::cout << "[CREATE][WARN] Failed to add :Company label to vertex "
+                << new_node.Gid().AsUint() << "\n";
+  }
 
-// Set 'id' property equal to GID value
-auto prop_id = dba.NameToProperty("id");
-storage::PropertyValue id_value(static_cast<int64_t>(new_node.Gid().AsUint()));
-auto res_prop = new_node.SetProperty(prop_id, id_value);
-if (!res_prop.HasError()) {
-    std::cout << "[CREATE] Set id property for vertex " << new_node.Gid().AsUint()
-              << " = " << new_node.Gid().AsUint() << "\n";
-} else {
-    std::cout << "[CREATE][WARN] Failed to set id property for vertex "
-              << new_node.Gid().AsUint() << "\n";
-}
+  // Set 'id' property equal to GID value
+  auto prop_id = dba.NameToProperty("id");
+  storage::PropertyValue id_value(static_cast<int64_t>(new_node.Gid().AsUint()));
+  auto res_prop = new_node.SetProperty(prop_id, id_value);
+  if (!res_prop.HasError()) {
+      std::cout << "[CREATE] Set id property for vertex " << new_node.Gid().AsUint()
+                << " = " << new_node.Gid().AsUint() << "\n";
+  } else {
+      std::cout << "[CREATE][WARN] Failed to set id property for vertex "
+                << new_node.Gid().AsUint() << "\n";
+  }*/
 
   context.execution_stats[ExecutionStats::Key::CREATED_NODES] += 1;
   for (const auto &label : labels) {
@@ -631,7 +631,7 @@ namespace {
 EdgeAccessor CreateEdge(const EdgeCreationInfo &edge_info, const storage::EdgeTypeId edge_type_id, DbAccessor *dba,
                         VertexAccessor *from, VertexAccessor *to, Frame *frame, ExecutionContext &context,
                         ExpressionEvaluator *evaluator) {
-                          std::cout << "[DEBUG] Inside CreateEdge()" << std::endl;
+  std::cout << "[DEBUG] Inside CreateEdge()" << std::endl;
   auto maybe_edge = dba->InsertEdge(from, to, edge_type_id);
   if (maybe_edge.HasValue()) {
     auto &edge = *maybe_edge;

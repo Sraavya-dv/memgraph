@@ -1,4 +1,4 @@
-// Copyright 2025 Memgraph Ltd.
+// Copyright 2026 Memgraph Ltd.
 //
 // Use of this software is governed by the Business Source License
 // included in the file licenses/BSL.txt; by using this file, you agree to be bound by the terms of the Business Source
@@ -23,10 +23,10 @@
 #include "query/trigger_fact.hpp"
 #include "query/typed_value.hpp"
 #include "storage/v2/property_value.hpp"
+#include "storage/v2/storage.hpp"
 #include "storage/v2/view.hpp"
 #include "utils/concepts.hpp"
 #include "utils/fnv.hpp"
-#include "storage/v2/storage.hpp"
 
 #include <string>
 #include <unordered_set>
@@ -35,13 +35,10 @@
 #include <unordered_set>
 #include "query/trigger_fact.hpp"
 
-
-
 namespace memgraph::query {
 
-  
-// Our unified alias for “sets of facts” with the right hasher + comparer:
-using TriggerFactSet = std::unordered_set<TriggerFactSignature,TriggerFactSignature::Hash,std::equal_to<TriggerFactSignature>>;
+using TriggerFactSet =
+    std::unordered_set<TriggerFactSignature, TriggerFactSignature::Hash, std::equal_to<TriggerFactSignature>>;
 
 namespace detail {
 template <typename T>
@@ -82,6 +79,8 @@ struct DeletedObject {
 
 struct ObjectCommonMethods {
   static auto PropertyToName(DbAccessor *dba, storage::PropertyId key) -> TypedValue;
+  static TypedValue LabelToName(DbAccessor *dba, storage::LabelId lid);
+  static TypedValue EdgeTypeToName(DbAccessor *dba, storage::EdgeTypeId et);
 };
 
 template <ObjectAccessor TAccessor>
@@ -163,7 +162,7 @@ enum class TriggerIdentifierTag : uint8_t {
 };
 
 enum class TriggerEventType : uint8_t {
-  ANY,  // Triggers on any change
+  ANY,
   VERTEX_CREATE,
   EDGE_CREATE,
   CREATE,
@@ -182,20 +181,21 @@ class TriggerContext {
  public:
   const auto &GetCreatedVertices() const { return created_vertices_; }
   const auto &GetDeletedVertices() const { return deleted_vertices_; }
-  const auto &GetSetVertexProperties() { return set_vertex_properties_; }
-  const auto &GetRemovedVertexProperties()  { return removed_vertex_properties_; }
+  const auto &GetSetVertexProperties() const { return set_vertex_properties_; }
+  const auto &GetRemovedVertexProperties() const { return removed_vertex_properties_; }
   const auto &GetSetVertexLabels() const { return set_vertex_labels_; }
   const auto &GetRemovedVertexLabels() const { return removed_vertex_labels_; }
 
   const auto &GetCreatedEdges() const { return created_edges_; }
   const auto &GetDeletedEdges() const { return deleted_edges_; }
-  const auto &GetSetEdgeProperties()  { return set_edge_properties_; }
-  const auto &GetRemovedEdgeProperties() { return removed_edge_properties_; }
-  //std::vector<EdgeAccessor> created_edges_;
+  const auto &GetSetEdgeProperties() const { return set_edge_properties_; }
+  const auto &GetRemovedEdgeProperties() const { return removed_edge_properties_; }
+  // std::vector<EdgeAccessor> created_edges_;
   TriggerContext FilterByEventType(TriggerEventType type) const;
-  
- TriggerFactSet ExtractFactSignatures(storage::View view, DbAccessor *dba) const;
- 
+
+  TriggerContext Normalize() const;
+
+  TriggerFactSet ExtractFactSignatures(storage::View view, DbAccessor *dba) const;
 
   void Merge(const TriggerContext &other);
 
@@ -225,12 +225,8 @@ class TriggerContext {
   TriggerContext &operator=(const TriggerContext &) = default;
   TriggerContext &operator=(TriggerContext &&) = default;
 
-  // Adapt the TriggerContext object inplace for a different DbAccessor
-  // (each derived accessor, e.g. VertexAccessor, gets adapted
-  // to the sent DbAccessor so they can be used safely)
   void AdaptForAccessor(DbAccessor *accessor);
 
-  // Get TypedValue for the identifier defined with tag
   TypedValue GetTypedValue(TriggerIdentifierTag tag, DbAccessor *dba) const;
   bool ShouldEventTrigger(TriggerEventType) const;
 
@@ -246,8 +242,7 @@ class TriggerContext {
   std::vector<detail::DeletedObject<EdgeAccessor>> deleted_edges_;
   std::vector<detail::SetObjectProperty<EdgeAccessor>> set_edge_properties_;
   std::vector<detail::RemovedObjectProperty<EdgeAccessor>> removed_edge_properties_;
-  //std::vector<TriggerEvent<storage::EdgeAccessor>> updated_edges_;
-
+  // std::vector<TriggerEvent<storage::EdgeAccessor>> updated_edges_;
 };
 
 // Collects the information necessary for triggers during a single transaction run.
@@ -274,12 +269,9 @@ class TriggerContextCollector {
   struct Registry {
     bool should_register_created_objects{false};
     bool should_register_deleted_objects{false};
-    bool should_register_updated_objects{false};  // Set/removed properties (and labels for vertices)
+    bool should_register_updated_objects{false};
     std::unordered_map<storage::Gid, detail::CreatedObject<TAccessor>> created_objects;
     std::vector<detail::DeletedObject<TAccessor>> deleted_objects;
-    // During the transaction, a single property on a single object could be changed multiple times.
-    // We want to register only the global change, at the end of the transaction. The change consists of
-    // the value before the transaction start, and the latest value assigned throughout the transaction.
     PropertyChangesMap<TAccessor> property_changes;
   };
 
@@ -377,27 +369,21 @@ class TriggerContextCollector {
     should_register_vertex_label_changes = true;
   }
 
-  void RegisterCreatedEdge(detail::CreatedObject<EdgeAccessor> ce) {
-  inserted_edges_.push_back(std::move(ce));
-}
+  void RegisterCreatedEdge(detail::CreatedObject<EdgeAccessor> ce) { inserted_edges_.push_back(std::move(ce)); }
 
-// Sprint 2
-  void RegisterDeletedEdge(detail::DeletedObject<EdgeAccessor> de) {
-  deleted_edges_buffer_.push_back(std::move(de));
-}
+  // Sprint 2
+  void RegisterDeletedEdge(detail::DeletedObject<EdgeAccessor> de) { deleted_edges_buffer_.push_back(std::move(de)); }
   void RegisterSetEdgeProperty(detail::SetObjectProperty<EdgeAccessor> sp) {
-  updated_edge_properties_buffer_.push_back(std::move(sp));
-}
+    updated_edge_properties_buffer_.push_back(std::move(sp));
+  }
   void RegisterRemovedEdgeProperty(detail::RemovedObjectProperty<EdgeAccessor> rp) {
-  removed_edge_properties_buffer_.push_back(std::move(rp));
-}
+    removed_edge_properties_buffer_.push_back(std::move(rp));
+  }
 
-const auto &GetCreatedEdgesBuffer() const { return inserted_edges_; }
-const auto &GetDeletedEdgesBuffer() const { return deleted_edges_buffer_; }
-const auto &GetUpdatedEdgePropertiesBuffer() const { return updated_edge_properties_buffer_; }
-const auto &GetRemovedEdgePropertiesBuffer() const { return removed_edge_properties_buffer_; }
-
-
+  const auto &GetCreatedEdgesBuffer() const { return inserted_edges_; }
+  const auto &GetDeletedEdgesBuffer() const { return deleted_edges_buffer_; }
+  const auto &GetUpdatedEdgePropertiesBuffer() const { return updated_edge_properties_buffer_; }
+  const auto &GetRemovedEdgePropertiesBuffer() const { return removed_edge_properties_buffer_; }
 
  private:
   template <detail::ObjectAccessor TAccessor>
@@ -422,15 +408,11 @@ const auto &GetRemovedEdgePropertiesBuffer() const { return removed_edge_propert
 
   Registry<VertexAccessor> vertex_registry_;
   Registry<EdgeAccessor> edge_registry_;
-  // During the transaction, a single label on a single vertex could be added and removed multiple times.
-  // We want to register only the global change, at the end of the transaction. The change consists of
-  // the state of the label before the transaction start, and the latest state assigned throughout the transaction.
   LabelChangesMap label_changes_;
 
-  std::vector<detail::CreatedObject<EdgeAccessor>> inserted_edges_; 
+  std::vector<detail::CreatedObject<EdgeAccessor>> inserted_edges_;
   std::vector<detail::DeletedObject<EdgeAccessor>> deleted_edges_buffer_;
   std::vector<detail::SetObjectProperty<EdgeAccessor>> updated_edge_properties_buffer_;
   std::vector<detail::RemovedObjectProperty<EdgeAccessor>> removed_edge_properties_buffer_;
-
 };
 }  // namespace memgraph::query
