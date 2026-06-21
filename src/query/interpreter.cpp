@@ -1,4 +1,4 @@
-// Copyright 2026 Memgraph Ltd.
+// Copyright 2025 Memgraph Ltd.
 //
 // Use of this software is governed by the Business Source License
 // included in the file licenses/BSL.txt; by using this file, you agree to be bound by the terms of the Business Source
@@ -12,6 +12,7 @@
 #include "query/interpreter.hpp"
 #include <bits/ranges_algo.h>
 #include <fmt/core.h>
+#include "query/edge_accessor.hpp"
 #include <algorithm>
 #include <atomic>
 #include <chrono>
@@ -30,7 +31,6 @@
 #include <utility>
 #include <variant>
 #include <vector>
-#include "query/edge_accessor.hpp"
 #include "utils/variant_helpers.hpp"
 
 #include <iostream>
@@ -6753,157 +6753,124 @@ void Interpreter::Commit() {
     frame_change_collector_.reset();
   }
 
-  if (trigger_context) {
-    constexpr bool kDebugRecursiveTriggers = true;
 
-    auto trigger_store_accessor = db->trigger_store()->BeforeCommitTriggers().access();
 
-    // Pending = wave-0 deltas (from user query)
-    memgraph::query::TriggerContext pending = std::move(*trigger_context);
-    pending = pending.Normalize();
 
-    auto PrintSampleCreatedVertices = [&](const memgraph::query::TriggerContext &ctx) {
-      if (!kDebugRecursiveTriggers) return;
-      int shown = 0;
-      for (const auto &cv : ctx.GetCreatedVertices()) {
-        std::cout << "  [sample] created vertex gid=" << cv.object.Gid().AsUint() << "\n";
-        if (++shown >= 3) break;
+
+
+
+
+
+
+
+ if (trigger_context) {
+  auto trigger_store_accessor = db->trigger_store()->BeforeCommitTriggers().access();
+
+  // 0) Initial pending context = first-wave changes (user query)
+  memgraph::query::TriggerContext pending = std::move(*trigger_context);
+
+  using FactSet = std::unordered_set<memgraph::query::TriggerFactSignature,
+                                     memgraph::query::TriggerFactSignature::Hash>;
+  FactSet global_seen;
+
+  int depth = 0;
+  constexpr int kMaxDepth = 20;
+
+  // Helper: run all relevant triggers on a given pending context, collecting new changes
+  auto RunTriggersOnContext = [&](const memgraph::query::TriggerContext &pending_ctx,
+                                  memgraph::query::TriggerContextCollector &out_collector) {
+    for (const auto &trigger : trigger_store_accessor) {
+      if (!pending_ctx.ShouldEventTrigger(trigger.EventType())) continue;
+
+      // Important: run only the relevant subset of context per trigger event type
+      auto filtered_ctx = pending_ctx.FilterByEventType(trigger.EventType());
+
+      QueryAllocator execution_memory{};
+      AdvanceCommand();
+
+      try {
+        // IMPORTANT: call the *same* Execute overload that your current build expects.
+        auto is_main = interpreter_context_->repl_state.ReadLock()->IsMain();
+
+        // If your Trigger::Execute signature is the "newer" one (with auth args):
+        trigger.Execute(&*current_db_.execution_db_accessor_,
+                        *current_db_.db_acc_,
+                        execution_memory.resource(),
+                        flags::run_time::GetExecutionTimeout(),
+                        &interpreter_context_->is_shutting_down,
+                        &transaction_status_,
+                        filtered_ctx,
+                        is_main,
+                        user_or_role_,
+                        interpreter_context_->auth_checker,
+                        &out_collector);
+
+        // If you DON'T have the collector overload above, then your Trigger::Execute
+        // doesn't support collecting changes yet and recursion can't work.
+        // In that case: you must use the older Execute(..., TriggerContext, TriggerContextCollector*) overload.
+
+      } catch (const utils::BasicException &e) {
+        throw utils::BasicException(
+            fmt::format("Recursive Trigger '{}' caused the transaction to fail.\nException: {}",
+                        trigger.Name(), e.what()));
       }
-    };
+    }
+  };
 
-    memgraph::query::TriggerContext accumulated = pending;
-
-    using FactSet =
-        std::unordered_set<memgraph::query::TriggerFactSignature, memgraph::query::TriggerFactSignature::Hash>;
-    FactSet global_seen;
-
-    int depth = 0;
-    constexpr int kMaxDepth = 20;
-
+  while (depth < kMaxDepth) {
+    // 1) Dedup/termination check: extract facts from pending
     auto *dba = &*current_db_.execution_db_accessor_;
-    auto PrintCtxSummary = [&](const char *tag, const memgraph::query::TriggerContext &ctx) {
-      if (!kDebugRecursiveTriggers) return;
+    auto facts = pending.ExtractFactSignatures(storage::View::NEW, dba);
 
-      const auto cv = ctx.GetCreatedVertices().size();
-      const auto ce = ctx.GetCreatedEdges().size();
-      const auto dv = ctx.GetDeletedVertices().size();
-      const auto de = ctx.GetDeletedEdges().size();
-
-      const auto svp = ctx.GetSetVertexProperties().size();
-      const auto rvp = ctx.GetRemovedVertexProperties().size();
-      const auto svl = ctx.GetSetVertexLabels().size();
-      const auto rvl = ctx.GetRemovedVertexLabels().size();
-
-      const auto sep = ctx.GetSetEdgeProperties().size();
-      const auto rep = ctx.GetRemovedEdgeProperties().size();
-
-      std::cout << "[TRG-REC] " << tag << " | CV=" << cv << " CE=" << ce << " | DV=" << dv << " DE=" << de
-                << " | Vprop+=" << svp << " Vprop-=" << rvp << " | Vlbl+=" << svl << " Vlbl-=" << rvl
-                << " | Eprop+=" << sep << " Eprop-=" << rep << "\n";
-    };
-
-    auto RunTriggersOnContext = [&](const memgraph::query::TriggerContext &pending_ctx,
-                                    memgraph::query::TriggerContextCollector &out_collector) {
-      for (const auto &trigger : trigger_store_accessor) {
-        if (!pending_ctx.ShouldEventTrigger(trigger.EventType())) continue;
-
-        auto filtered_ctx = pending_ctx.FilterByEventType(trigger.EventType());
-
-        if (kDebugRecursiveTriggers) {
-          std::cout << "[TRG-REC] firing trigger='" << trigger.Name()
-                    << "' event=" << static_cast<int>(trigger.EventType()) << "\n";
-        }
-
-        QueryAllocator execution_memory{};
-        AdvanceCommand();
-
-        try {
-          trigger.Execute(&*current_db_.execution_db_accessor_, current_db_.db_acc_, execution_memory.resource(),
-                          flags::run_time::GetExecutionTimeout(), &interpreter_context_->is_shutting_down,
-                          &transaction_status_, filtered_ctx, &out_collector);
-        } catch (const utils::BasicException &e) {
-          throw utils::BasicException(fmt::format(
-              "Recursive Trigger '{}' caused the transaction to fail.\nException: {}", trigger.Name(), e.what()));
-        }
-      }
-    };
-
-    while (depth < kMaxDepth) {
-      if (kDebugRecursiveTriggers) {
-        std::cout << "\n[TRG-REC] ===== wave " << depth << " =====\n";
-        PrintCtxSummary("pending", pending);
-      }
-      auto facts_new = pending.ExtractFactSignatures(storage::View::NEW, dba);
-      auto facts_old = pending.ExtractFactSignatures(storage::View::OLD, dba);
-
-      bool any_new = false;
-      for (const auto &f : facts_new)
-        if (global_seen.insert(f).second) any_new = true;
-      for (const auto &f : facts_old)
-        if (global_seen.insert(f).second) any_new = true;
-
-      if (!any_new) {
-        if (kDebugRecursiveTriggers) {
-          std::cout << "[TRG-REC] stop: fixpoint (no new facts)\n";
-        }
-        break;
-      }
-      // reached fixpoint
-
-      // --- Collector for this wave (tracks everything) ---
-      memgraph::query::TriggerContextCollector collector({
-          TriggerEventType::VERTEX_CREATE,
-          TriggerEventType::EDGE_CREATE,
-          TriggerEventType::VERTEX_UPDATE,
-          TriggerEventType::EDGE_UPDATE,
-          TriggerEventType::VERTEX_DELETE,
-          TriggerEventType::EDGE_DELETE,
-      });
-
-      collector.EnableUpdatedPropertiesTracking();
-      collector.EnableVertexLabelChangeTracking();
-
-      collector.GetRegistry<EdgeAccessor>().should_register_created_objects = true;
-      collector.GetRegistry<EdgeAccessor>().should_register_updated_objects = true;
-      collector.GetRegistry<EdgeAccessor>().should_register_deleted_objects = true;
-
-      collector.GetRegistry<VertexAccessor>().should_register_created_objects = true;
-      collector.GetRegistry<VertexAccessor>().should_register_updated_objects = true;
-      collector.GetRegistry<VertexAccessor>().should_register_deleted_objects = true;
-
-      RunTriggersOnContext(pending, collector);
-
-      // --- Next wave context ---
-      memgraph::query::TriggerContext next_pending = std::move(collector).TransformToTriggerContext();
-      next_pending = next_pending.Normalize();
-      if (kDebugRecursiveTriggers) {
-        PrintCtxSummary("next_pending", next_pending);
-      }
-
-      if (!next_pending.ShouldEventTrigger(TriggerEventType::ANY)) {
-        if (kDebugRecursiveTriggers) {
-          std::cout << "[TRG-REC] stop: next_pending has no events\n";
-        }
-        break;
-      }
-
-      accumulated.Merge(next_pending);
-      pending = std::move(next_pending);
-      ++depth;
+    bool any_new = false;
+    for (const auto &f : facts) {
+      if (global_seen.insert(f).second) any_new = true;
     }
-    if (kDebugRecursiveTriggers) {
-      if (depth >= kMaxDepth) std::cout << "[TRG-REC] stop: reached kMaxDepth\n";
-      std::cout << "[TRG-REC] done: depth=" << depth << "\n\n";
-    }
+    if (!any_new) break;  // fixpoint reached
 
-    SPDLOG_DEBUG("Finished executing before commit triggers (recursive), depth={}", depth);
+    // 2) Create a collector that will capture changes made by triggers in this wave
+    TriggerContextCollector collector({
+        TriggerEventType::VERTEX_CREATE,
+        TriggerEventType::EDGE_CREATE,
+        TriggerEventType::VERTEX_UPDATE,
+        TriggerEventType::EDGE_UPDATE,
+        TriggerEventType::VERTEX_DELETE,
+        TriggerEventType::EDGE_DELETE,
+    });
 
-    trigger_context.emplace(std::move(accumulated));
+    collector.EnableUpdatedPropertiesTracking();
+    collector.EnableVertexLabelChangeTracking();
+
+    collector.GetRegistry<EdgeAccessor>().should_register_created_objects = true;
+    collector.GetRegistry<EdgeAccessor>().should_register_updated_objects = true;
+    collector.GetRegistry<EdgeAccessor>().should_register_deleted_objects = true;
+
+    collector.GetRegistry<VertexAccessor>().should_register_created_objects = true;
+    collector.GetRegistry<VertexAccessor>().should_register_updated_objects = true;
+    collector.GetRegistry<VertexAccessor>().should_register_deleted_objects = true;
+
+    // 3) Run triggers on this wave
+    RunTriggersOnContext(pending, collector);
+
+    // 4) Convert collector -> next pending context
+    memgraph::query::TriggerContext next_pending = std::move(collector).TransformToTriggerContext();
+
+    // 5) If no new events were produced, stop
+    if (!next_pending.ShouldEventTrigger(TriggerEventType::ANY)) break;
+
+    pending = std::move(next_pending);
+    depth++;
   }
 
-  /*if (trigger_context) {
+  SPDLOG_DEBUG("Finished executing before commit triggers (recursive), depth={}", depth);
+
+  // If downstream code expects trigger_context to exist, recreate it:
+  trigger_context.emplace(std::move(pending));
+}
 
 
+
+/*
 
     TriggerContextCollector collector({
   TriggerEventType::VERTEX_CREATE,
@@ -6923,11 +6890,11 @@ collector.GetRegistry<VertexAccessor>().should_register_deleted_objects = true;
     collector.EnableVertexLabelChangeTracking();
     collector.EnableUpdatedPropertiesTracking();
 
-    std::cout << "[DBG] first wave flags: created="
+    std::cout << "[DBG] first wave flags: created=" 
             << collector.GetRegistry<EdgeAccessor>().created_objects.size()
-            << ", deleted="
+            << ", deleted=" 
             << collector.GetRegistry<EdgeAccessor>().deleted_objects.size()
-            << ", updatedProps="
+            << ", updatedProps=" 
             << collector.GetRegistry<EdgeAccessor>().property_changes.size()
             << std::endl;
 
@@ -6939,7 +6906,7 @@ collector.GetRegistry<VertexAccessor>().should_register_deleted_objects = true;
       const auto &trigger = *it;
       QueryAllocator execution_memory{};
       AdvanceCommand();
-
+     
 
       try {
         trigger.Execute(&*current_db_.execution_db_accessor_, current_db_.db_acc_, execution_memory.resource(),
@@ -6966,133 +6933,123 @@ collector.GetRegistry<VertexAccessor>().should_register_deleted_objects = true;
     std::cout << "Updated vertices (first wave): " << updated_count << std::endl;
 */
 
-  // Remove any existing CONTROL edge not in final expected set
-  /*for (const auto &pair : current_controls) {
-    if (!final_control_edges.contains(pair)) {
-      auto from_node = dba->FindVertex(storage::Gid::FromUint(pair.first), storage::View::NEW);
-      auto to_node   = dba->FindVertex(storage::Gid::FromUint(pair.second), storage::View::NEW);
-      if (!from_node || !to_node) continue;
 
-      auto out_edges_res = from_node->OutEdges(storage::View::NEW);
-      if (out_edges_res.HasError()) continue;
 
-      for (const auto &edge : out_edges_res.GetValue().edges) {
-        if (edge.To().Gid() == to_node->Gid() &&
-            dba->EdgeTypeToName(edge.EdgeType()) == "CONTROLS") {
-          auto res = dba->RemoveEdge(const_cast<EdgeAccessor *>(&edge));
-          if (!res.HasError()) {
-            std::cout << "REMOVED CONTROL: " << pair.first << " -> " << pair.second << "\n";
-          }
+   /* auto trigger_store_accessor = db->trigger_store()->BeforeCommitTriggers().access();
+    auto it = trigger_store_accessor.begin();
+
+   TriggerContext current_context = std::move(*trigger_context);
+
+/*
+
+for (const auto &t : trigger_store_accessor) {
+  if (current_context.ShouldEventTrigger(t.EventType())) {
+    auto facts = current_context.ExtractFactSignatures(storage::View::NEW, dba);
+    trigger_queue.emplace_back(&t, std::move(facts));
+  }
+}
+
+
+    while (!trigger_queue.empty() && depth < kMaxDepth) {
+      std::unordered_set<std::string> seen_this_pass;
+
+
+      const auto [trigger, previous_facts] = trigger_queue.front();
+      trigger_queue.pop_front();
+
+      // Narrow down to JUST this trigger's events
+      auto filtered_context = current_context.FilterByEventType(trigger->EventType());
+
+      // Build a collector that watches only trigger->EventType()
+      TriggerContextCollector collector({trigger->EventType()});
+
+      // Enable exactly the right registry flags based on event type:
+      switch (trigger->EventType()) {
+
+        case TriggerEventType::VERTEX_CREATE:
+          collector.GetRegistry<VertexAccessor>().should_register_created_objects = true;
+          break;
+
+        case TriggerEventType::EDGE_CREATE:
+          collector.GetRegistry<EdgeAccessor>().should_register_created_objects = true;
+          break;
+
+        case TriggerEventType::VERTEX_UPDATE:
+          collector.EnableUpdatedPropertiesTracking();
+          collector.GetRegistry<VertexAccessor>().should_register_updated_objects = true;
+          collector.EnableVertexLabelChangeTracking();
+          break;
+
+          case TriggerEventType::EDGE_UPDATE:
+          collector.EnableUpdatedPropertiesTracking();
+          collector.GetRegistry<EdgeAccessor>().should_register_updated_objects = true;
+          break;
+
+        case TriggerEventType::DELETE:
+        case TriggerEventType::VERTEX_DELETE:
+          collector.GetRegistry<VertexAccessor>().should_register_deleted_objects = true;
+          break;
+
+        case TriggerEventType::EDGE_DELETE:
+          collector.GetRegistry<EdgeAccessor>().should_register_deleted_objects = true;
+          break;
+
+        default:
+          break;
+      }
+
+      QueryAllocator exec_mem{};
+      AdvanceCommand();
+
+      
+
+      try {
+        trigger->Execute(&*current_db_.execution_db_accessor_, current_db_.db_acc_, exec_mem.resource(),
+                         flags::run_time::GetExecutionTimeout(), &interpreter_context_->is_shutting_down,
+                         &transaction_status_, filtered_context, &collector);
+
+      } catch (const utils::BasicException &e) {
+        throw utils::BasicException(
+            fmt::format("Recursive Trigger '{}' failed.\nException: {}", trigger->Name(), e.what()));
+      }
+
+       // Transform to context and extract new facts
+      TriggerContext next_context = std::move(collector).TransformToTriggerContext();
+      std::cout << "[DEBUG] createdEdges count = " << current_context.GetCreatedEdges().size() << "\n";
+      
+      auto next = std::move(collector).TransformToTriggerContext();
+      auto new_facts = next_context.ExtractFactSignatures(storage::View::NEW, &*current_db_.execution_db_accessor_);
+
+
+      // Check for any fact not seen before  
+      bool has_new_fact = false;
+
+      for (const auto &fact : new_facts) {
+        if (previous_facts.find(fact) == previous_facts.end()) {
+          has_new_fact = true;
           break;
         }
       }
-    }
-  }*/
-
-  /*
-
-  for (const auto &t : trigger_store_accessor) {
-    if (current_context.ShouldEventTrigger(t.EventType())) {
-      auto facts = current_context.ExtractFactSignatures(storage::View::NEW, dba);
-      trigger_queue.emplace_back(&t, std::move(facts));
-    }
-  }
 
 
-      while (!trigger_queue.empty() && depth < kMaxDepth) {
-        std::unordered_set<std::string> seen_this_pass;
-
-
-        const auto [trigger, previous_facts] = trigger_queue.front();
-        trigger_queue.pop_front();
-
-        // Narrow down to JUST this trigger's events
-        auto filtered_context = current_context.FilterByEventType(trigger->EventType());
-
-        // Build a collector that watches only trigger->EventType()
-        TriggerContextCollector collector({trigger->EventType()});
-
-        // Enable exactly the right registry flags based on event type:
-        switch (trigger->EventType()) {
-
-          case TriggerEventType::VERTEX_CREATE:
-            collector.GetRegistry<VertexAccessor>().should_register_created_objects = true;
-            break;
-
-          case TriggerEventType::EDGE_CREATE:
-            collector.GetRegistry<EdgeAccessor>().should_register_created_objects = true;
-            break;
-
-          case TriggerEventType::VERTEX_UPDATE:
-            collector.EnableUpdatedPropertiesTracking();
-            collector.GetRegistry<VertexAccessor>().should_register_updated_objects = true;
-            collector.EnableVertexLabelChangeTracking();
-            break;
-
-            case TriggerEventType::EDGE_UPDATE:
-            collector.EnableUpdatedPropertiesTracking();
-            collector.GetRegistry<EdgeAccessor>().should_register_updated_objects = true;
-            break;
-
-          case TriggerEventType::DELETE:
-          case TriggerEventType::VERTEX_DELETE:
-            collector.GetRegistry<VertexAccessor>().should_register_deleted_objects = true;
-            break;
-
-          case TriggerEventType::EDGE_DELETE:
-            collector.GetRegistry<EdgeAccessor>().should_register_deleted_objects = true;
-            break;
-
-          default:
-            break;
-        }
-
-        QueryAllocator exec_mem{};
-        AdvanceCommand();
-
-
-
-        try {
-          trigger->Execute(&*current_db_.execution_db_accessor_, current_db_.db_acc_, exec_mem.resource(),
-                           flags::run_time::GetExecutionTimeout(), &interpreter_context_->is_shutting_down,
-                           &transaction_status_, filtered_context, &collector);
-
-        } catch (const utils::BasicException &e) {
-          throw utils::BasicException(
-              fmt::format("Recursive Trigger '{}' failed.\nException: {}", trigger->Name(), e.what()));
-        }
-
-         // Transform to context and extract new facts
-        TriggerContext next_context = std::move(collector).TransformToTriggerContext();
-        std::cout << "[DEBUG] createdEdges count = " << current_context.GetCreatedEdges().size() << "\n";
-
-        auto next = std::move(collector).TransformToTriggerContext();
-        auto new_facts = next_context.ExtractFactSignatures(storage::View::NEW, &*current_db_.execution_db_accessor_);
-
-
-        // Check for any fact not seen before
-        bool has_new_fact = false;
-
-        for (const auto &fact : new_facts) {
-          if (previous_facts.find(fact) == previous_facts.end()) {
-            has_new_fact = true;
-            break;
-          }
-        }
-
-
-        //  new_context = std::move(next_context);
-        if (has_new_fact) {
-          trigger_queue.emplace_back(trigger, std::move(new_facts));
-          depth++;
-        }
-
+      //  new_context = std::move(next_context);
+      if (has_new_fact) {
+        trigger_queue.emplace_back(trigger, std::move(new_facts));
+        depth++;
       }
+      
+    }
 
-      SPDLOG_DEBUG("Finished executing before commit triggers");
-
+    SPDLOG_DEBUG("Finished executing before commit triggers");
+    */
   }
-      */
+
+
+
+
+
+
+
 
   const auto reset_necessary_members = [this]() {
     for (auto &qe : query_executions_) {

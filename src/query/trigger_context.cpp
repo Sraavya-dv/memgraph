@@ -1,4 +1,4 @@
-// Copyright 2026 Memgraph Ltd.
+// Copyright 2025 Memgraph Ltd.
 //
 // Use of this software is governed by the Business Source License
 // included in the file licenses/BSL.txt; by using this file, you agree to be bound by the terms of the Business Source
@@ -14,8 +14,7 @@
 #include <concepts>
 #include "query/typed_value.hpp"
 
-#include <functional>
-#include <optional>
+
 #include "query/context.hpp"
 #include "query/cypher_query_interpreter.hpp"
 #include "query/db_accessor.hpp"
@@ -26,6 +25,8 @@
 #include "query/typed_value.hpp"
 #include "storage/v2/property_value.hpp"
 #include "utils/memory.hpp"
+#include <functional>   // for std::hash
+#include <optional>     // for std::optional
 
 namespace memgraph::query {
 namespace {
@@ -83,33 +84,6 @@ TypedValue ToTypedValue(const std::vector<TContext> &values, DbAccessor *dba) {
   }
 
   return result;
-}
-
-std::string CanonicalTypedValueSummary(const memgraph::query::TypedValue &tv) {
-  using TV = memgraph::query::TypedValue;
-
-  switch (tv.type()) {
-    case TV::Type::Null:
-      return "null";
-    case TV::Type::Bool:
-      return std::string("b:") + (tv.ValueBool() ? "1" : "0");
-    case TV::Type::Int:
-      return "i:" + std::to_string(tv.ValueInt());
-    case TV::Type::Double:
-      return "d:" + std::to_string(tv.ValueDouble());
-    case TV::Type::String: {
-      const auto &pmr_s = tv.ValueString();  // std::pmr::string
-      return "s:" + std::string(pmr_s.begin(), pmr_s.end());
-    }
-
-    case TV::Type::List:
-      return "list";
-    case TV::Type::Map:
-      return "map";
-
-    default:
-      return "other";
-  }
 }
 
 template <ConvertableToTypedValue T>
@@ -239,7 +213,7 @@ template <detail::ObjectAccessor TAccessor>
                    return gid_and_created_object.second;
                  });
 
-  // std::cout << " Summarize(): created_objects_vec.size() = " << created_objects_vec.size() << std::endl;
+  std::cout << " Summarize(): created_objects_vec.size() = " << created_objects_vec.size() << std::endl;
 
   registry.created_objects.clear();
 
@@ -263,75 +237,7 @@ std::map<std::string, TypedValue> RemovedVertexLabel::ToMap(DbAccessor *dba) con
 auto ObjectCommonMethods::PropertyToName(DbAccessor *dba, storage::PropertyId key) -> TypedValue {
   return TypedValue{dba->PropertyToName(key)};
 }
-TypedValue ObjectCommonMethods::LabelToName(DbAccessor *dba, storage::LabelId lid) {
-  return TypedValue{dba->LabelToName(lid)};
-}
-
-TypedValue ObjectCommonMethods::EdgeTypeToName(DbAccessor *dba, storage::EdgeTypeId et) {
-  return TypedValue{dba->EdgeTypeToName(et)};
-}
 }  // namespace detail
-
-TriggerContext TriggerContext::Normalize() const {
-  TriggerContext out = *this;
-
-  std::unordered_set<storage::Gid> deleted_vertices;
-  deleted_vertices.reserve(out.deleted_vertices_.size());
-  for (const auto &dv : out.deleted_vertices_) deleted_vertices.insert(dv.object.Gid());
-
-  std::unordered_set<storage::Gid> deleted_edges;
-  deleted_edges.reserve(out.deleted_edges_.size());
-  for (const auto &de : out.deleted_edges_) deleted_edges.insert(de.object.Gid());
-
-  // Cancel create+delete for vertices
-  if (!deleted_vertices.empty()) {
-    auto &cv = out.created_vertices_;
-    cv.erase(
-        std::remove_if(cv.begin(), cv.end(), [&](const auto &x) { return deleted_vertices.contains(x.object.Gid()); }),
-        cv.end());
-
-    // Drop all vertex updates for deleted vertices
-    out.set_vertex_properties_.erase(
-        std::remove_if(out.set_vertex_properties_.begin(), out.set_vertex_properties_.end(),
-                       [&](const auto &x) { return deleted_vertices.contains(x.object.Gid()); }),
-        out.set_vertex_properties_.end());
-
-    out.removed_vertex_properties_.erase(
-        std::remove_if(out.removed_vertex_properties_.begin(), out.removed_vertex_properties_.end(),
-                       [&](const auto &x) { return deleted_vertices.contains(x.object.Gid()); }),
-        out.removed_vertex_properties_.end());
-
-    out.set_vertex_labels_.erase(
-        std::remove_if(out.set_vertex_labels_.begin(), out.set_vertex_labels_.end(),
-                       [&](const auto &x) { return deleted_vertices.contains(x.object.Gid()); }),
-        out.set_vertex_labels_.end());
-
-    out.removed_vertex_labels_.erase(
-        std::remove_if(out.removed_vertex_labels_.begin(), out.removed_vertex_labels_.end(),
-                       [&](const auto &x) { return deleted_vertices.contains(x.object.Gid()); }),
-        out.removed_vertex_labels_.end());
-  }
-
-  // Cancel create+delete for edges + drop updates
-  if (!deleted_edges.empty()) {
-    auto &ce = out.created_edges_;
-    ce.erase(
-        std::remove_if(ce.begin(), ce.end(), [&](const auto &x) { return deleted_edges.contains(x.object.Gid()); }),
-        ce.end());
-
-    out.set_edge_properties_.erase(
-        std::remove_if(out.set_edge_properties_.begin(), out.set_edge_properties_.end(),
-                       [&](const auto &x) { return deleted_edges.contains(x.object.Gid()); }),
-        out.set_edge_properties_.end());
-
-    out.removed_edge_properties_.erase(
-        std::remove_if(out.removed_edge_properties_.begin(), out.removed_edge_properties_.end(),
-                       [&](const auto &x) { return deleted_edges.contains(x.object.Gid()); }),
-        out.removed_edge_properties_.end());
-  }
-
-  return out;
-}
 
 const char *TriggerEventTypeToString(const TriggerEventType event_type) {
   switch (event_type) {
@@ -379,6 +285,10 @@ void TriggerContext::AdaptForAccessor(DbAccessor *accessor) {
     }
     created_vertices_.erase(it, created_vertices_.end());
   }
+
+  // deleted_vertices_ should keep the transaction context of the transaction which deleted it
+  // because no other transaction can modify an object after it's deleted so it should be the
+  // latest state of the object
 
   const auto adapt_context_with_vertex = [accessor](auto *values) {
     auto it = values->begin();
@@ -626,6 +536,7 @@ void TriggerContextCollector::RegisterRemovedVertexLabel(const VertexAccessor &v
 }
 
 void TriggerContext::Merge(const TriggerContext &other) {
+  // for each internal vector, append other's contents
   created_vertices_.insert(created_vertices_.end(), other.created_vertices_.begin(), other.created_vertices_.end());
   deleted_vertices_.insert(deleted_vertices_.end(), other.deleted_vertices_.begin(), other.deleted_vertices_.end());
   created_edges_.insert(created_edges_.end(), other.created_edges_.begin(), other.created_edges_.end());
@@ -658,8 +569,9 @@ TriggerContext TriggerContextCollector::TransformToTriggerContext() && {
   auto [set_vertex_labels, removed_vertex_labels] = LabelMapToList(std::move(label_changes_));
   auto [created_edges, deleted_edges, set_edge_properties, removed_edge_properties] =
       Summarize(std::move(edge_registry_));
+  
 
-  deleted_edges.reserve(deleted_edges.size() + deleted_edges_buffer_.size());
+   deleted_edges.reserve(deleted_edges.size() + deleted_edges_buffer_.size());
   for (auto &de : deleted_edges_buffer_) {
     deleted_edges.push_back(std::move(de));
   }
@@ -673,20 +585,26 @@ TriggerContext TriggerContextCollector::TransformToTriggerContext() && {
   for (auto &rp : removed_edge_properties_buffer_) {
     removed_edge_properties.push_back(std::move(rp));
   }
-
-  // Append “positive‐diff” edge buffer into created_edges
+  
+  // Append our “positive‐diff” edge buffer into created_edges
   created_edges.reserve(created_edges.size() + inserted_edges_.size());
   for (auto &ce : inserted_edges_) {
     created_edges.push_back(std::move(ce));
   }
 
   // Now construct the TriggerContext with the augmented created_edges
-  return {std::move(created_vertices),      std::move(deleted_vertices),
-          std::move(set_vertex_properties), std::move(removed_vertex_properties),
-          std::move(set_vertex_labels),     std::move(removed_vertex_labels),
-          std::move(created_edges),         std::move(deleted_edges),
-          std::move(set_edge_properties),   std::move(removed_edge_properties)};
-}
+   return {
+    std::move(created_vertices),
+    std::move(deleted_vertices),
+    std::move(set_vertex_properties),
+    std::move(removed_vertex_properties),
+    std::move(set_vertex_labels),
+    std::move(removed_vertex_labels),
+    std::move(created_edges),
+    std::move(deleted_edges),
+    std::move(set_edge_properties),
+    std::move(removed_edge_properties)
+  };}
 
 TriggerContext TriggerContext::FilterByEventType(TriggerEventType type) const {
   TriggerContext filtered;
@@ -700,23 +618,23 @@ TriggerContext TriggerContext::FilterByEventType(TriggerEventType type) const {
 
   if (is_create) {
     filtered.created_vertices_ = created_vertices_;
-    filtered.created_edges_ = created_edges_;
+    filtered.created_edges_    = created_edges_;
   }
 
   if (is_delete) {
     filtered.deleted_vertices_ = deleted_vertices_;
-    filtered.deleted_edges_ = deleted_edges_;
+    filtered.deleted_edges_    = deleted_edges_;
   }
 
   if (is_update) {
-    // PROP
-    filtered.set_vertex_properties_ = set_vertex_properties_;
+    // PROPS
+    filtered.set_vertex_properties_     = set_vertex_properties_;
     filtered.removed_vertex_properties_ = removed_vertex_properties_;
-    filtered.set_edge_properties_ = set_edge_properties_;
-    filtered.removed_edge_properties_ = removed_edge_properties_;
+    filtered.set_edge_properties_       = set_edge_properties_;
+    filtered.removed_edge_properties_   = removed_edge_properties_;
     // LABELS
-    filtered.set_vertex_labels_ = set_vertex_labels_;
-    filtered.removed_vertex_labels_ = removed_vertex_labels_;
+    filtered.set_vertex_labels_         = set_vertex_labels_;
+    filtered.removed_vertex_labels_     = removed_vertex_labels_;
   }
 
   // Narrow further for vertex-only or edge-only update types
@@ -733,12 +651,13 @@ TriggerContext TriggerContext::FilterByEventType(TriggerEventType type) const {
 
   // Narrow further for vertex-only create/delete
   if (type == TriggerEventType::VERTEX_CREATE) filtered.created_edges_.clear();
-  if (type == TriggerEventType::EDGE_CREATE) filtered.created_vertices_.clear();
+  if (type == TriggerEventType::EDGE_CREATE)   filtered.created_vertices_.clear();
   if (type == TriggerEventType::VERTEX_DELETE) filtered.deleted_edges_.clear();
-  if (type == TriggerEventType::EDGE_DELETE) filtered.deleted_vertices_.clear();
+  if (type == TriggerEventType::EDGE_DELETE)   filtered.deleted_vertices_.clear();
 
   return filtered;
 }
+
 
 TriggerContextCollector::LabelChangesLists TriggerContextCollector::LabelMapToList(LabelChangesMap &&label_changes) {
   std::vector<detail::SetVertexLabel> set_vertex_labels;
@@ -760,7 +679,9 @@ TriggerContextCollector::LabelChangesLists TriggerContextCollector::LabelMapToLi
 TriggerFactSet TriggerContext::ExtractFactSignatures(storage::View view, DbAccessor *dba) const {
   TriggerFactSet facts;
 
-  auto to_std = [](auto pmr_str) { return std::string{pmr_str}; };
+  auto to_std = [](auto pmr_str) {
+    return std::string{pmr_str};
+  };
 
   auto prop_name = [&](storage::PropertyId pid) -> std::string {
     return to_std(detail::ObjectCommonMethods::PropertyToName(dba, pid).ValueString());
@@ -775,121 +696,135 @@ TriggerFactSet TriggerContext::ExtractFactSignatures(storage::View view, DbAcces
   };
 
   auto summarize_value = [&](const storage::PropertyValue &v) -> std::string {
+    // Keep it simple and stable
     if (v.IsNull()) return "null";
     if (v.IsBool()) return v.ValueBool() ? "true" : "false";
     if (v.IsInt()) return std::to_string(v.ValueInt());
     if (v.IsDouble()) return std::to_string(v.ValueDouble());
     if (v.IsString()) return v.ValueString();
+    // fallback: type name only (prevents huge strings)
     return std::string{"<complex>"};
   };
 
+  // --------------------
   // VERTEX: property sets
   for (const auto &obj : set_vertex_properties_) {
-    if (!obj.IsValid()) continue;
-    //",const std::string name = prop_name(obj.key);
+    const std::string name = prop_name(obj.key);
     std::string val_sum;
 
-    /*auto props_res = obj.object.Properties(view);
+    // Try to read NEW value from the object
+    auto props_res = obj.object.Properties(view);
     if (!props_res.HasError()) {
       const auto &props = props_res.GetValue();
       auto it = props.find(obj.key);
       if (it != props.end()) val_sum = summarize_value(it->second);
-    }*/
+    }
 
-    const std::string prop_name = dba->PropertyToName(obj.key);
-
-    const std::string old_sum = CanonicalTypedValueSummary(obj.old_value);
-    const std::string new_sum = CanonicalTypedValueSummary(obj.new_value);
-
-    facts.insert(TriggerFactSignature{"SET_VERTEX_PROP", obj.object.Gid(), prop_name, old_sum, new_sum});
+    facts.insert(TriggerFactSignature{
+        "SET_VERTEX_PROP",
+        obj.object.Gid(),
+        std::make_optional(name),
+        val_sum.empty() ? std::nullopt : std::make_optional(val_sum)});
   }
 
   // VERTEX: property removals
   for (const auto &obj : removed_vertex_properties_) {
-    if (!obj.IsValid()) continue;
-    const std::string prop_name = dba->PropertyToName(obj.key);
-    const std::string old_sum = CanonicalTypedValueSummary(obj.old_value);
-
-    facts.insert(TriggerFactSignature{"REMOVED_VERTEX_PROP", obj.object.Gid(), prop_name, old_sum,
-                                      std::make_optional<std::string>("null")});
+    const std::string name = prop_name(obj.key);
+    facts.insert(TriggerFactSignature{
+        "REMOVED_VERTEX_PROP",
+        obj.object.Gid(),
+        std::make_optional(name),
+        std::nullopt});
   }
 
-  // VERTEX: label add/remove  (NOTE: label_id, not label)
+  // VERTEX: label add/remove
   for (const auto &obj : set_vertex_labels_) {
-    const std::string lbl = label_name(obj.label_id);
-    facts.insert(TriggerFactSignature{"ADD_VERTEX_LABEL", obj.object.Gid(), std::make_optional(lbl), std::nullopt,
-                                      std::nullopt});
+    const std::string lbl = label_name(obj.label);
+    facts.insert(TriggerFactSignature{
+        "ADD_VERTEX_LABEL",
+        obj.object.Gid(),
+        std::make_optional(lbl),
+        std::nullopt});
   }
-
   for (const auto &obj : removed_vertex_labels_) {
-    const std::string lbl = label_name(obj.label_id);
-    facts.insert(TriggerFactSignature{"REMOVE_VERTEX_LABEL", obj.object.Gid(), std::make_optional(lbl), std::nullopt,
-                                      std::nullopt});
+    const std::string lbl = label_name(obj.label);
+    facts.insert(TriggerFactSignature{
+        "REMOVE_VERTEX_LABEL",
+        obj.object.Gid(),
+        std::make_optional(lbl),
+        std::nullopt});
   }
 
+  // --------------------
+  // EDGE: CREATED / DELETED (semantic signatures!)
+  // Encode semantic edge key as:
+  //   gid = from_gid
+  //   property_name = edge_type
+  //   value_summary = "to=<to_gid>"
   for (const auto &obj : created_edges_) {
     const auto &e = obj.object;
     const auto from = e.From().Gid();
-    const auto to = e.To().Gid();
+    const auto to   = e.To().Gid();
     const std::string et = edge_type_name(e.EdgeType());
     const std::string vs = "to=" + std::to_string(to.AsUint());
-
     facts.insert(TriggerFactSignature{"CREATED_EDGE", from, std::make_optional(et), std::make_optional(vs)});
   }
 
   for (const auto &obj : deleted_edges_) {
     const auto &e = obj.object;
     const auto from = e.From().Gid();
-    const auto to = e.To().Gid();
+    const auto to   = e.To().Gid();
     const std::string et = edge_type_name(e.EdgeType());
     const std::string vs = "to=" + std::to_string(to.AsUint());
-
     facts.insert(TriggerFactSignature{"DELETED_EDGE", from, std::make_optional(et), std::make_optional(vs)});
   }
 
-  // --------------------
-  // EDGE: property sets
+  // EDGE: property sets/removals (semantic + value)
   for (const auto &obj : set_edge_properties_) {
     const auto &e = obj.object;
-
-    // Use EDGE GID for uniqueness (important if multiple edges share endpoints/type).
-    const auto gid = e.Gid();
-
+    const auto from = e.From().Gid();
+    const auto to   = e.To().Gid();
     const std::string et = edge_type_name(e.EdgeType());
-    const std::string prop_name = dba->PropertyToName(obj.key);
+    const std::string pn = prop_name(obj.key);
 
-    const std::string old_sum = CanonicalTypedValueSummary(obj.old_value);
-    const std::string new_sum = CanonicalTypedValueSummary(obj.new_value);
+    std::string val_sum;
+    auto props_res = e.Properties(view);
+    if (!props_res.HasError()) {
+      const auto &props = props_res.GetValue();
+      auto it = props.find(obj.key);
+      if (it != props.end()) val_sum = summarize_value(it->second);
+    }
 
-    // property_name: namespace edge type + property
-    // value_summary: encode transition old->new so dedup doesn't kill recursion
-    facts.insert(TriggerFactSignature{"SET_EDGE_PROP", gid, std::make_optional(et + "." + prop_name),
-                                      std::make_optional(old_sum), std::make_optional(new_sum)});
+    // property_name includes both edge type and property name
+    facts.insert(TriggerFactSignature{
+        "SET_EDGE_PROP",
+        from,
+        std::make_optional(et + "." + pn),
+        std::make_optional("to=" + std::to_string(to.AsUint()) + ";v=" + (val_sum.empty() ? "?" : val_sum))});
   }
 
-  // EDGE: property removals
   for (const auto &obj : removed_edge_properties_) {
     const auto &e = obj.object;
-    const auto gid = e.Gid();
-
+    const auto from = e.From().Gid();
+    const auto to   = e.To().Gid();
     const std::string et = edge_type_name(e.EdgeType());
-    const std::string prop_name = dba->PropertyToName(obj.key);
+    const std::string pn = prop_name(obj.key);
 
-    const std::string old_sum = CanonicalTypedValueSummary(obj.old_value);
-
-    facts.insert(TriggerFactSignature{"REMOVED_EDGE_PROP", gid, std::make_optional(et + "." + prop_name),
-                                      std::make_optional(old_sum), "null"});
+    facts.insert(TriggerFactSignature{
+        "REMOVED_EDGE_PROP",
+        from,
+        std::make_optional(et + "." + pn),
+        std::make_optional("to=" + std::to_string(to.AsUint()))});
   }
 
+  // --------------------
+  // CREATED / DELETED VERTEX
   for (const auto &obj : created_vertices_) {
     facts.insert(TriggerFactSignature{"CREATED_VERTEX", obj.object.Gid(), std::nullopt, std::nullopt});
   }
-
   for (const auto &obj : deleted_vertices_) {
     facts.insert(TriggerFactSignature{"DELETED_VERTEX", obj.object.Gid(), std::nullopt, std::nullopt});
   }
 
   return facts;
 }
-
-}  // namespace memgraph::query
